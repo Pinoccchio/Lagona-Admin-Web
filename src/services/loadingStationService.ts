@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database } from '@/lib/supabase/types'
+import { systemConfigService } from './systemConfigService'
 
 type LoadingStation = Database['public']['Tables']['loading_stations']['Row']
 type LoadingStationInsert = Database['public']['Tables']['loading_stations']['Insert']
@@ -241,7 +242,13 @@ export const loadingStationService = {
     const adminSupabase = createAdminClient()
     
     try {
-      // Step 1: Create the Supabase auth user
+      // Step 1: Get current commission rates from system config
+      const commissionRates = await systemConfigService.getCommissionRates()
+      
+      // Use the commission rate from system config instead of the provided one
+      const actualCommissionRate = commissionRates.loadingStation
+      
+      // Step 2: Create the Supabase auth user
       const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
         email: params.email,
         password: params.password,
@@ -266,7 +273,7 @@ export const loadingStationService = {
       const authUserId = authData.user.id
 
       try {
-        // Step 2: Create user record in users table
+        // Step 3: Create user record in users table
         const { data: userData, error: userError } = await supabase
           .from('users')
           .insert({
@@ -284,7 +291,7 @@ export const loadingStationService = {
           throw new Error(`Failed to create user record: ${userError.message}`)
         }
 
-        // Step 3: Generate LSCODE (you might want to implement proper LSCODE generation)
+        // Step 4: Generate LSCODE (you might want to implement proper LSCODE generation)
         const businessHubBHCODE = await supabase
           .from('business_hubs')
           .select('bhcode')
@@ -299,7 +306,7 @@ export const loadingStationService = {
         const timestamp = Date.now().toString().slice(-4)
         const lscode = `${businessHubBHCODE.data.bhcode}-LS${timestamp}`
 
-        // Step 4: Create loading station record
+        // Step 5: Create loading station record with system-configured commission rate
         const { data: stationData, error: stationError } = await supabase
           .from('loading_stations')
           .insert({
@@ -307,7 +314,7 @@ export const loadingStationService = {
             area: params.area,
             address: params.address,
             business_hub_id: params.business_hub_id,
-            commission_rate: params.commission_rate,
+            commission_rate: actualCommissionRate,
             lscode: lscode,
             user_id: authUserId,
             status: 'pending',

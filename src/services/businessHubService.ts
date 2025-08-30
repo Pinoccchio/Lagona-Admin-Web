@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
+import { systemConfigService } from './systemConfigService'
 
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row']
 type BusinessHubInsert = Database['public']['Tables']['business_hubs']['Insert']
@@ -262,7 +263,10 @@ export const businessHubService = {
     const adminSupabase = createAdminClient()
     
     try {
-      // Step 1: First create the Supabase auth user to get the UUID
+      // Step 1: Get current commission rates from system config
+      const commissionRates = await systemConfigService.getCommissionRates()
+      
+      // Step 2: Create the Supabase auth user to get the UUID
       const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
         email: params.email,
         password: params.password,
@@ -288,7 +292,7 @@ export const businessHubService = {
       const authUserId = authData.user.id
 
       try {
-        // Step 2: Use the new database function that handles complete user creation
+        // Step 3: Use the existing database function and update commission rate separately
         const { data: hubResult, error: hubError } = await supabase.rpc('create_business_hub_with_complete_user_info', {
           auth_user_id: authUserId,
           user_email: params.email,
@@ -306,14 +310,20 @@ export const businessHubService = {
           throw new Error(`Failed to create business hub: ${hubError.message}`)
         }
 
-        const result = hubResult?.[0]
+        const result = Array.isArray(hubResult) ? hubResult[0] : hubResult
         
         if (!result?.success) {
           throw new Error(result?.message || 'Business hub creation failed')
         }
 
+        // Update commission rate separately with system-configured value
+        const hubRecord = result.hub_record as any
+        if (hubRecord?.id) {
+          await this.updateBusinessHub(hubRecord.id, { commission_rate: commissionRates.businessHub })
+        }
+
         // Return the hub record from the successful result
-        return result.hub_record
+        return hubRecord
 
       } catch (dbError) {
         // If database operations fail, clean up the auth user

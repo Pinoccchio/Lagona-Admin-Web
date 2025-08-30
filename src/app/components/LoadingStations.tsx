@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { loadingStationService } from '@/services/loadingStationService';
 import { businessHubService } from '@/services/businessHubService';
+import { systemConfigService } from '@/services/systemConfigService';
 import type { Database } from '@/lib/supabase/types';
 
 type LoadingStation = Database['public']['Tables']['loading_stations']['Row'] & {
@@ -44,6 +45,7 @@ export default function LoadingStations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statistics, setStatistics] = useState<any>(null);
+  const [systemCommissionRate, setSystemCommissionRate] = useState<number>(20);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     area: '',
@@ -71,7 +73,18 @@ export default function LoadingStations() {
     fetchLoadingStations();
     fetchBusinessHubs();
     fetchStatistics();
+    loadSystemCommissionRate();
   }, []);
+
+  const loadSystemCommissionRate = async () => {
+    try {
+      const commissionRates = await systemConfigService.getCommissionRates();
+      setSystemCommissionRate(commissionRates.loadingStation);
+    } catch (error) {
+      console.error('Error loading system commission rate:', error);
+      // Keep default value if loading fails
+    }
+  };
 
   const fetchLoadingStations = async () => {
     try {
@@ -148,7 +161,7 @@ export default function LoadingStations() {
       area: '',
       address: '',
       business_hub_id: '',
-      commission_rate: '20',
+      commission_rate: systemCommissionRate.toString(),
       manager_name: '',
       phone_number: '',
       email: '',
@@ -195,10 +208,7 @@ export default function LoadingStations() {
     if (!formData.address.trim()) return 'Address is required';
     if (!formData.business_hub_id) return 'Business Hub selection is required';
     
-    const commissionRate = parseFloat(formData.commission_rate);
-    if (isNaN(commissionRate) || commissionRate < 15 || commissionRate > 30) {
-      return 'Commission rate must be between 15% and 30%';
-    }
+    // Commission rate is now set by system config, no validation needed
     
     // Phone number validation (optional but check format if provided)
     if (formData.phone_number.trim()) {
@@ -239,7 +249,7 @@ export default function LoadingStations() {
           area: formData.area,
           address: formData.address,
           business_hub_id: formData.business_hub_id,
-          commission_rate: parseFloat(formData.commission_rate),
+          commission_rate: systemCommissionRate,
           updated_at: new Date().toISOString()
         }, formData.phone_number, formData.manager_name);
         setSuccessMessage('Loading station updated successfully!');
@@ -250,7 +260,7 @@ export default function LoadingStations() {
           area: formData.area,
           address: formData.address,
           business_hub_id: formData.business_hub_id,
-          commission_rate: parseFloat(formData.commission_rate),
+          commission_rate: systemCommissionRate,
           manager_name: formData.manager_name,
           phone_number: formData.phone_number,
           email: formData.email,
@@ -686,18 +696,18 @@ export default function LoadingStations() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-deep-black mb-2">Commission Rate (%) *</label>
+                  <label className="block text-sm font-medium text-deep-black mb-2">Commission Rate (%)</label>
                   <input
                     type="number"
-                    value={formData.commission_rate}
-                    onChange={(e) => handleInputChange('commission_rate', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-orange focus:border-transparent"
+                    value={systemCommissionRate}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
                     placeholder="20"
-                    min="15"
-                    max="30"
-                    step="0.1"
-                    disabled={formLoading}
+                    disabled
+                    readOnly
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Rate set by system configuration - {systemCommissionRate}%
+                  </p>
                 </div>
               </div>
 

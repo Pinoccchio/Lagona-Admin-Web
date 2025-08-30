@@ -1,54 +1,189 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { systemConfigService, type CommissionRates, type DeliveryPricing, type TopUpBonuses, type SystemSettings } from '@/services/systemConfigService';
 
 export default function SystemConfig() {
-  const [commissionRates, setCommissionRates] = useState({
+  const [commissionRates, setCommissionRates] = useState<CommissionRates>({
     businessHub: 50,
     loadingStation: 20,
     rider: 18,
     platform: 12
   });
 
-  const [deliveryPricing, setDeliveryPricing] = useState({
+  const [deliveryPricing, setDeliveryPricing] = useState<DeliveryPricing>({
     baseRate: 65,
     perKmRate: 10
   });
 
-  const [topUpBonuses, setTopUpBonuses] = useState({
+  const [topUpBonuses, setTopUpBonuses] = useState<TopUpBonuses>({
     businessHubBonus: 50,
     loadingStationBonus: 25
   });
 
-  const [systemSettings, setSystemSettings] = useState({
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     maintenanceMode: false,
     newRegistrations: true,
     autoApprovals: false,
     notificationsEnabled: true
   });
 
-  const handleCommissionSave = () => {
-    console.log('Saving commission rates:', commissionRates);
-    alert('Commission rates updated successfully!');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saveLoading, setSaveLoading] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadConfigurations();
+  }, []);
+
+  const loadConfigurations = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const [rates, pricing, bonuses, settings] = await Promise.all([
+        systemConfigService.getCommissionRates(),
+        systemConfigService.getDeliveryPricing(),
+        systemConfigService.getTopUpBonuses(),
+        systemConfigService.getSystemSettings()
+      ]);
+
+      setCommissionRates(rates);
+      setDeliveryPricing(pricing);
+      setTopUpBonuses(bonuses);
+      setSystemSettings(settings);
+    } catch (err) {
+      console.error('Error loading configurations:', err);
+      setError('Failed to load system configurations');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeliveryPricingSave = () => {
-    console.log('Saving delivery pricing:', deliveryPricing);
-    alert('Delivery pricing updated successfully!');
+  const showSuccessMessage = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 3000);
   };
 
-  const handleBonusSave = () => {
-    console.log('Saving bonus settings:', topUpBonuses);
-    alert('Bonus settings updated successfully!');
+  const handleCommissionSave = async () => {
+    try {
+      setSaveLoading('commission');
+      setError(null);
+      
+      // Validate commission rates
+      const total = commissionRates.businessHub + commissionRates.loadingStation + commissionRates.rider + commissionRates.platform;
+      if (Math.abs(total - 100) > 0.01) {
+        throw new Error(`Commission rates must total 100%. Current total: ${total}%`);
+      }
+      
+      await systemConfigService.updateCommissionRates(commissionRates);
+      showSuccessMessage('Commission rates updated successfully!');
+    } catch (err) {
+      console.error('Error saving commission rates:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save commission rates';
+      setError(errorMessage);
+    } finally {
+      setSaveLoading(null);
+    }
   };
 
-  const handleSystemSettingsSave = () => {
-    console.log('Saving system settings:', systemSettings);
-    alert('System settings updated successfully!');
+  const handleDeliveryPricingSave = async () => {
+    try {
+      setSaveLoading('pricing');
+      setError(null);
+      
+      // Validate pricing values
+      if (deliveryPricing.baseRate <= 0 || deliveryPricing.perKmRate <= 0) {
+        throw new Error('Pricing values must be greater than 0');
+      }
+      
+      await systemConfigService.updateDeliveryPricing(deliveryPricing);
+      showSuccessMessage('Delivery pricing updated successfully!');
+    } catch (err) {
+      console.error('Error saving delivery pricing:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save delivery pricing';
+      setError(errorMessage);
+    } finally {
+      setSaveLoading(null);
+    }
   };
+
+  const handleBonusSave = async () => {
+    try {
+      setSaveLoading('bonus');
+      setError(null);
+      
+      // Validate bonus values
+      if (topUpBonuses.businessHubBonus < 0 || topUpBonuses.loadingStationBonus < 0) {
+        throw new Error('Bonus values cannot be negative');
+      }
+      if (topUpBonuses.businessHubBonus > 100 || topUpBonuses.loadingStationBonus > 100) {
+        throw new Error('Bonus values cannot exceed 100%');
+      }
+      
+      await systemConfigService.updateTopUpBonuses(topUpBonuses);
+      showSuccessMessage('Bonus settings updated successfully!');
+    } catch (err) {
+      console.error('Error saving bonus settings:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save bonus settings';
+      setError(errorMessage);
+    } finally {
+      setSaveLoading(null);
+    }
+  };
+
+  const handleSystemSettingsSave = async () => {
+    try {
+      setSaveLoading('system');
+      setError(null);
+      await systemConfigService.updateSystemSettings(systemSettings);
+      showSuccessMessage('System settings updated successfully!');
+    } catch (err) {
+      console.error('Error saving system settings:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save system settings';
+      setError(errorMessage);
+    } finally {
+      setSaveLoading(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-deep-black">System Configuration</h1>
+          <p className="text-gray-600 mt-1">Configure commission rates, pricing, and platform parameters</p>
+        </div>
+        <div className="flex justify-center py-12">
+          <div className="text-gray-500">Loading system configurations...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+          <button 
+            onClick={() => setError(null)}
+            className="ml-2 text-red-800 hover:text-red-900"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-deep-black">System Configuration</h1>
@@ -145,9 +280,12 @@ export default function SystemConfig() {
 
             <button
               onClick={handleCommissionSave}
-              className="w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow"
+              disabled={saveLoading === 'commission'}
+              className={`w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow ${
+                saveLoading === 'commission' ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              Save Commission Rates
+              {saveLoading === 'commission' ? 'Saving...' : 'Save Commission Rates'}
             </button>
           </div>
         </div>
@@ -202,9 +340,12 @@ export default function SystemConfig() {
 
             <button
               onClick={handleDeliveryPricingSave}
-              className="w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow"
+              disabled={saveLoading === 'pricing'}
+              className={`w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow ${
+                saveLoading === 'pricing' ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              Save Delivery Pricing
+              {saveLoading === 'pricing' ? 'Saving...' : 'Save Delivery Pricing'}
             </button>
           </div>
         </div>
@@ -256,9 +397,12 @@ export default function SystemConfig() {
 
             <button
               onClick={handleBonusSave}
-              className="w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow"
+              disabled={saveLoading === 'bonus'}
+              className={`w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow ${
+                saveLoading === 'bonus' ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              Save Bonus Settings
+              {saveLoading === 'bonus' ? 'Saving...' : 'Save Bonus Settings'}
             </button>
           </div>
         </div>
@@ -346,9 +490,12 @@ export default function SystemConfig() {
 
             <button
               onClick={handleSystemSettingsSave}
-              className="w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow"
+              disabled={saveLoading === 'system'}
+              className={`w-full lagona-gradient text-pure-white py-3 rounded-lg font-semibold lagona-hover lagona-shadow ${
+                saveLoading === 'system' ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              Save System Settings
+              {saveLoading === 'system' ? 'Saving...' : 'Save System Settings'}
             </button>
           </div>
         </div>

@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.4"
+  }
   public: {
     Tables: {
       business_hubs: {
@@ -149,6 +154,7 @@ export type Database = {
           business_hub_id: string
           commission_rate: number | null
           created_at: string | null
+          current_balance: number | null
           id: string
           lscode: string
           name: string
@@ -163,6 +169,7 @@ export type Database = {
           business_hub_id: string
           commission_rate?: number | null
           created_at?: string | null
+          current_balance?: number | null
           id?: string
           lscode: string
           name: string
@@ -177,6 +184,7 @@ export type Database = {
           business_hub_id?: string
           commission_rate?: number | null
           created_at?: string | null
+          current_balance?: number | null
           id?: string
           lscode?: string
           name?: string
@@ -346,6 +354,7 @@ export type Database = {
         Row: {
           commission_rate: number | null
           created_at: string | null
+          current_balance: number | null
           id: string
           loading_station_id: string
           rcode: string
@@ -360,6 +369,7 @@ export type Database = {
         Insert: {
           commission_rate?: number | null
           created_at?: string | null
+          current_balance?: number | null
           id?: string
           loading_station_id: string
           rcode: string
@@ -374,6 +384,7 @@ export type Database = {
         Update: {
           commission_rate?: number | null
           created_at?: string | null
+          current_balance?: number | null
           id?: string
           loading_station_id?: string
           rcode?: string
@@ -402,38 +413,117 @@ export type Database = {
           },
         ]
       }
+      system_config: {
+        Row: {
+          config_key: string
+          config_type: string
+          config_value: Json
+          created_at: string | null
+          description: string | null
+          id: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          config_key: string
+          config_type: string
+          config_value: Json
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          config_key?: string
+          config_type?: string
+          config_value?: Json
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_config_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       top_ups: {
         Row: {
           amount: number
+          approved_by_id: string | null
           bonus_amount: number | null
+          bonus_percentage: number | null
           created_at: string | null
           id: string
+          is_initial_load: boolean | null
+          parent_entity_id: string | null
+          parent_entity_type: string | null
           payment_method: string
+          processed_at: string | null
+          requester_id: string | null
+          requester_type: string | null
           status: string | null
           total_amount: number
           user_id: string
         }
         Insert: {
           amount: number
+          approved_by_id?: string | null
           bonus_amount?: number | null
+          bonus_percentage?: number | null
           created_at?: string | null
           id?: string
+          is_initial_load?: boolean | null
+          parent_entity_id?: string | null
+          parent_entity_type?: string | null
           payment_method: string
+          processed_at?: string | null
+          requester_id?: string | null
+          requester_type?: string | null
           status?: string | null
           total_amount: number
           user_id: string
         }
         Update: {
           amount?: number
+          approved_by_id?: string | null
           bonus_amount?: number | null
+          bonus_percentage?: number | null
           created_at?: string | null
           id?: string
+          is_initial_load?: boolean | null
+          parent_entity_id?: string | null
+          parent_entity_type?: string | null
           payment_method?: string
+          processed_at?: string | null
+          requester_id?: string | null
+          requester_type?: string | null
           status?: string | null
           total_amount?: number
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_topups_approved_by"
+            columns: ["approved_by_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_topups_requester_user"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "top_ups_user_id_fkey"
             columns: ["user_id"]
@@ -481,91 +571,167 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_topup: {
+        Args: { approver_user_id: string; topup_id: string }
+        Returns: boolean
+      }
+      calculate_delivery_fee: {
+        Args: { distance_km: number }
+        Returns: number
+      }
       create_admin_user: {
-        Args: {
-          user_id: string
-          user_email: string
-          user_full_name: string
-        }
+        Args: { user_email: string; user_full_name: string; user_id: string }
         Returns: {
-          success: boolean
+          admin_user_id: string
           message: string
+          success: boolean
         }[]
       }
-      create_business_hub_with_user: {
+      create_business_hub_with_auth_complete: {
         Args: {
           hub_name: string
+          initial_load_amount?: number
+          manager_name: string
           municipality: string
           province: string
-          manager_name: string
           territory_name?: string
-          user_email?: string
-          user_full_name?: string
+          user_email: string
+          user_password: string
         }
         Returns: {
-          id: string
-          name: string
+          auth_user_id: string
           bhcode: string
+          created_hub: Json
+          hub_id: string
+          message: string
+          success: boolean
+          topup_id: string
+          user_id: string
+        }[]
+      }
+      create_business_hub_with_auth_user: {
+        Args: {
+          auth_user_id: string
+          hub_name: string
+          initial_load_amount?: number
+          manager_name: string
+          municipality: string
+          province: string
+          territory_name?: string
+        }
+        Returns: {
+          bhcode: string
+          hub_id: string
+          hub_record: Json
+          topup_id: string
+          user_id: string
+        }[]
+      }
+      create_business_hub_with_complete_user_info: {
+        Args:
+          | {
+              auth_user_id: string
+              hub_name: string
+              initial_load_amount?: number
+              manager_name: string
+              municipality: string
+              province: string
+              territory_name?: string
+              user_email: string
+              user_full_name: string
+            }
+          | {
+              auth_user_id: string
+              hub_name: string
+              initial_load_amount?: number
+              manager_name: string
+              municipality: string
+              province: string
+              territory_name?: string
+              user_email: string
+              user_full_name: string
+              user_phone_number?: string
+            }
+        Returns: {
+          bhcode: string
+          hub_id: string
+          hub_record: Json
+          message: string
+          success: boolean
+          topup_id: string
+          user_id: string
         }[]
       }
       create_business_hub_with_initial_load: {
         Args: {
           hub_name: string
+          initial_load_amount?: number
+          manager_name: string
           municipality: string
           province: string
-          manager_name: string
           territory_name?: string
-          initial_load_amount: number
           user_email?: string
           user_full_name?: string
         }
         Returns: {
-          id: string
-          name: string
           bhcode: string
+          created_hub: Json
+          hub_id: string
+          topup_id: string
+          user_id: string
+        }[]
+      }
+      create_business_hub_with_user: {
+        Args: {
+          hub_name: string
+          manager_name: string
+          municipality: string
+          province: string
+          territory_name?: string
+          user_email?: string
+          user_full_name?: string
+        }
+        Returns: {
+          bhcode: string
+          created_hub: Json
+          hub_id: string
+          user_id: string
         }[]
       }
       delete_business_hub_complete: {
-        Args: {
-          hub_id: string
-        }
+        Args: { hub_id: string }
         Returns: {
-          success: boolean
+          deleted_hub_id: string
+          deleted_records: Json
+          deleted_user_id: string
           message: string
-          deleted_records: number
-          deleted_user_id?: string
+          success: boolean
         }[]
       }
-      create_business_hub_with_complete_user_info: {
+      generate_bhcode: {
+        Args: { municipality_name: string }
+        Returns: string
+      }
+      get_bonus_percentage: {
+        Args: { requester_type: string }
+        Returns: number
+      }
+      request_topup: {
         Args: {
-          auth_user_id: string
-          user_email: string
-          user_full_name: string
-          hub_name: string
-          municipality: string
-          province: string
-          manager_name: string
-          user_phone_number?: string
-          territory_name?: string
-          initial_load_amount: number
+          payment_method?: string
+          requested_amount: number
+          requester_type: string
+          requester_user_id: string
         }
-        Returns: {
-          success: boolean
-          message: string
-          hub_record: {
-            id: string
-            name: string
-            bhcode: string
-            manager_name: string
-            municipality: string
-            province: string
-            territory_name: string | null
-            current_balance: number | null
-            initial_balance: number | null
-            status: string | null
-            user_id: string
-          }
-        }[]
+        Returns: string
+      }
+      validate_topup_hierarchy: {
+        Args: {
+          approver_user_id: string
+          requester_type: string
+          requester_user_id: string
+        }
+        Returns: boolean
       }
     }
     Enums: {
@@ -577,82 +743,125 @@ export type Database = {
   }
 }
 
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (Database["public"]["Tables"] & Database["public"]["Views"])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
-    : never = never
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (Database["public"]["Tables"] &
-      Database["public"]["Views"])
-  ? (Database["public"]["Tables"] &
-      Database["public"]["Views"])[PublicTableNameOrOptions] extends {
-      Row: infer R
-    }
-    ? R
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
     : never
-  : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof Database["public"]["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
-    : never = never
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof Database["public"]["Tables"]
-  ? Database["public"]["Tables"][PublicTableNameOrOptions] extends {
-      Insert: infer I
-    }
-    ? I
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
     : never
-  : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof Database["public"]["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
-    : never = never
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof Database["public"]["Tables"]
-  ? Database["public"]["Tables"][PublicTableNameOrOptions] extends {
-      Update: infer U
-    }
-    ? U
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
     : never
-  : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof Database["public"]["Enums"]
-    | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
-    : never = never
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof Database["public"]["Enums"]
-  ? Database["public"]["Enums"][PublicEnumNameOrOptions]
-  : never
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const
