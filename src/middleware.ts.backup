@@ -1,0 +1,105 @@
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          // Set cookies on the request for immediate availability
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value)
+          })
+          
+          // Create new response with updated cookies
+          response = NextResponse.next({
+            request,
+          })
+          
+          // Set cookies on the response with proper options
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, {
+              ...options,
+              path: '/',
+              sameSite: 'lax',
+              secure: process.env.NODE_ENV === 'production',
+              httpOnly: options?.httpOnly ?? true,
+            })
+          })
+        },
+      },
+    }
+  )
+
+  try {
+    console.log('[Middleware] Processing request:', request.nextUrl.pathname)
+    
+    // CRITICAL FIX: Use getUser() instead of getSession() - getSession() is unreliable in server code
+    const { data: { user }, error } = await supabase.auth.getUser()
+    
+    if (error) {
+      console.warn('[Middleware] User validation error:', error.message)
+      // If there's an auth error, treat as unauthenticated
+      // This prevents issues with invalid/expired tokens
+    }
+    
+    console.log('[Middleware] User status:', user ? 'authenticated' : 'not authenticated')
+
+    // Protected routes that require authentication
+    const protectedRoutes = ['/dashboard']
+    const isProtectedRoute = protectedRoutes.some(route => 
+      request.nextUrl.pathname.startsWith(route)
+    )
+
+    // ANTI-LOOP PROTECTION: Don't redirect if already on target path
+    // If user is not logged in and trying to access protected route
+    if (isProtectedRoute && !user && request.nextUrl.pathname !== '/') {
+      console.log('[Middleware] Redirecting to login - no user for protected route')
+      const loginUrl = new URL('/', request.url)
+      return NextResponse.redirect(loginUrl)
+    }
+
+    // If user is logged in and trying to access login page, redirect to dashboard
+    if (user && request.nextUrl.pathname === '/' && request.nextUrl.pathname !== '/dashboard') {
+      console.log('[Middleware] Redirecting to dashboard - user already authenticated')
+      const dashboardUrl = new URL('/dashboard', request.url)
+      return NextResponse.redirect(dashboardUrl)
+    }
+
+    console.log('[Middleware] Request allowed to proceed')
+    return response
+  } catch (error) {
+    console.error('[Middleware] Unexpected error:', error)
+    // Clear any problematic auth state on unexpected errors
+    const errorResponse = NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    })
+    
+    // Clear potentially problematic auth cookies on error
+    const authCookieNames = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token']
+    authCookieNames.forEach(cookieName => {
+      if (request.cookies.get(cookieName)) {
+        errorResponse.cookies.delete(cookieName)
+      }
+    })
+    
+    return errorResponse
+  }
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+}

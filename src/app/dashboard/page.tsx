@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import DashboardOverview from '../components/DashboardOverview';
 import BusinessHubs from '../components/BusinessHubs';
@@ -14,13 +16,67 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  
+  const { user, profile, loading, signOut } = useAuth();
+  const router = useRouter();
 
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // CLIENT-SIDE ROUTE PROTECTION - Simple and reliable
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log('[Dashboard] No user, redirecting to login')
+      router.replace('/')
+    }
+  }, [user, loading, router])
+
+  // Timer for current time
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Show loading screen while checking auth
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gradient-to-br from-slate-50 via-white to-orange-50/30 items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-r from-primary-orange to-primary-yellow rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg animate-pulse mb-4 mx-auto">
+            L
+          </div>
+          <p className="text-gray-600 font-medium">Loading LAGONA Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render dashboard if user is not authenticated
+  if (!user) {
+    return null // Will redirect via useEffect above
+  }
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      setLogoutError(null);
+      console.log('[Dashboard] Starting logout...');
+      
+      // Simple client-side logout
+      await signOut();
+      console.log('[Dashboard] Logout completed');
+      
+      // Redirect immediately - no need for server coordination
+      router.replace('/');
+      
+    } catch (error) {
+      console.error('[Dashboard] Logout error:', error);
+      setLogoutError('Logout failed. Please try again.');
+      setIsLoggingOut(false);
+    }
+  };
 
   const getPageTitle = () => {
     switch (activeTab) {
@@ -64,6 +120,7 @@ export default function Dashboard() {
         return <DashboardOverview />;
     }
   };
+
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-50 via-white to-orange-50/30">
@@ -126,22 +183,42 @@ export default function Dashboard() {
                 <div className="flex items-center space-x-4">
                   <div className="hidden sm:block text-right">
                     <div className="text-sm font-semibold text-gray-900">Welcome back</div>
-                    <div className="text-xs text-gray-600">Admin User</div>
+                    <div className="text-xs text-gray-600">{profile?.full_name || 'Admin User'}</div>
                   </div>
                   
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-gradient-to-r from-primary-orange to-primary-yellow rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">
-                      A
+                      {profile?.full_name?.charAt(0) || user?.email?.charAt(0).toUpperCase() || 'A'}
                     </div>
                     
                     <button 
-                      onClick={() => window.location.href = '/'}
-                      className="group relative overflow-hidden bg-gradient-to-r from-primary-orange to-primary-yellow text-white px-6 py-2.5 rounded-xl font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-200/50"
+                      onClick={handleLogout}
+                      disabled={isLoggingOut}
+                      className={`group relative overflow-hidden bg-gradient-to-r from-primary-orange to-primary-yellow text-white px-6 py-2.5 rounded-xl font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-200/50 ${
+                        isLoggingOut ? 'opacity-70 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <span className="relative z-10 text-sm">Logout</span>
+                      <span className="relative z-10 text-sm">
+                        {isLoggingOut ? 'Logging out...' : 'Logout'}
+                      </span>
                       <div className="absolute inset-0 bg-gradient-to-r from-primary-yellow to-primary-orange opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                     </button>
                   </div>
+                  
+                  {/* Logout Error Display */}
+                  {logoutError && (
+                    <div className="absolute top-16 right-0 bg-red-50 border border-red-200 text-red-600 px-4 py-2 rounded-lg shadow-lg max-w-sm z-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">{logoutError}</span>
+                        <button 
+                          onClick={() => setLogoutError(null)}
+                          className="ml-3 text-red-400 hover:text-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

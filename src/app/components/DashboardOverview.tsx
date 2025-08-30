@@ -1,10 +1,34 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { analyticsService } from '@/services/analyticsService';
+
 export default function DashboardOverview() {
+  const [loading, setLoading] = useState(true);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const stats = await analyticsService.getDashboardStatistics();
+      setDashboardStats(stats);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const stats = [
     {
       title: 'Total Revenue',
-      value: '₱2,847,320',
+      value: loading ? '...' : `₱${dashboardStats?.revenue?.total?.toLocaleString() || '0'}`,
       change: '+12.5%',
       trend: 'up',
       color: 'text-green-600',
@@ -17,8 +41,8 @@ export default function DashboardOverview() {
     },
     {
       title: 'Active Business Hubs',
-      value: '24',
-      change: '+3 this month',
+      value: loading ? '...' : (dashboardStats?.businessHubs?.active || 0).toString(),
+      change: `${dashboardStats?.businessHubs?.total || 0} total`,
       trend: 'up',
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
@@ -30,8 +54,8 @@ export default function DashboardOverview() {
     },
     {
       title: 'Active Loading Stations',
-      value: '186',
-      change: '+18 this month',
+      value: loading ? '...' : (dashboardStats?.loadingStations?.active || 0).toString(),
+      change: `${dashboardStats?.loadingStations?.total || 0} total`,
       trend: 'up',
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
@@ -43,9 +67,9 @@ export default function DashboardOverview() {
       )
     },
     {
-      title: 'Total Orders Today',
-      value: '1,247',
-      change: '+8.2%',
+      title: 'Total Orders',
+      value: loading ? '...' : (dashboardStats?.orders?.total || 0).toString(),
+      change: `${dashboardStats?.orders?.delivered || 0} delivered`,
       trend: 'up',
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',
@@ -89,10 +113,10 @@ export default function DashboardOverview() {
   ];
 
   const commissionData = [
-    { name: 'Business Hubs', percentage: 50, amount: '₱1,423,660', color: 'bg-orange-500' },
-    { name: 'Loading Stations', percentage: 20, amount: '₱569,464', color: 'bg-yellow-500' },
-    { name: 'Riders', percentage: 18, amount: '₱512,518', color: 'bg-blue-500' },
-    { name: 'Platform', percentage: 12, amount: '₱341,678', color: 'bg-green-500' }
+    { name: 'Business Hubs', percentage: 50, amount: `₱${dashboardStats?.businessHubs?.totalRevenue?.toLocaleString() || '0'}`, color: 'bg-orange-500' },
+    { name: 'Loading Stations', percentage: 20, amount: `₱${dashboardStats?.loadingStations?.totalRevenue?.toLocaleString() || '0'}`, color: 'bg-yellow-500' },
+    { name: 'Riders', percentage: 18, amount: `₱${dashboardStats?.riders?.totalEarnings?.toLocaleString() || '0'}`, color: 'bg-blue-500' },
+    { name: 'Platform', percentage: 12, amount: `₱${dashboardStats?.revenue?.platformFees?.toLocaleString() || '0'}`, color: 'bg-green-500' }
   ];
 
   return (
