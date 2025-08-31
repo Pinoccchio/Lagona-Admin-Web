@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { systemConfigService, type CommissionRates, type DeliveryPricing, type TopUpBonuses, type SystemSettings } from '@/services/systemConfigService';
+import { businessHubService } from '@/services/businessHubService';
+import { loadingStationService } from '@/services/loadingStationService';
+import { auditService } from '@/services/auditService';
+import AuditHistory from './AuditHistory';
 
 export default function SystemConfig() {
   const [commissionRates, setCommissionRates] = useState<CommissionRates>({
@@ -32,6 +36,9 @@ export default function SystemConfig() {
   const [error, setError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showPropagationWarning, setShowPropagationWarning] = useState(false);
+  const [affectedEntities, setAffectedEntities] = useState<{ hubs: number; stations: number }>({ hubs: 0, stations: 0 });
+  const [showAuditHistory, setShowAuditHistory] = useState(false);
 
   useEffect(() => {
     loadConfigurations();
@@ -64,6 +71,28 @@ export default function SystemConfig() {
   const showSuccessMessage = (message: string) => {
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  const checkAffectedEntities = async () => {
+    try {
+      // Get all business hubs and loading stations that use system rates
+      const hubs = await businessHubService.getAllBusinessHubs();
+      const stations = await loadingStationService.getAllLoadingStations();
+      
+      const affectedHubs = hubs.filter((h: any) => h.uses_system_commission_rate !== false).length;
+      const affectedStations = stations.filter((s: any) => s.uses_system_commission_rate !== false).length;
+      
+      setAffectedEntities({ hubs: affectedHubs, stations: affectedStations });
+      
+      if (affectedHubs > 0 || affectedStations > 0) {
+        setShowPropagationWarning(true);
+      }
+      
+      return { hubs: affectedHubs, stations: affectedStations };
+    } catch (error) {
+      console.error('Error checking affected entities:', error);
+      return { hubs: 0, stations: 0 };
+    }
   };
 
   const handleCommissionSave = async () => {

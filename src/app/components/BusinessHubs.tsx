@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { businessHubService } from '@/services/businessHubService';
 import { loadingStationService } from '@/services/loadingStationService';
+import AuditHistory from './AuditHistory';
 import type { Database } from '@/lib/supabase/types';
 
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row'] & {
@@ -34,6 +35,9 @@ export default function BusinessHubs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statistics, setStatistics] = useState<any>(null);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditEntityId, setAuditEntityId] = useState<string | null>(null);
+  const [auditEntityName, setAuditEntityName] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     municipality: '',
@@ -65,23 +69,42 @@ export default function BusinessHubs() {
   const fetchBusinessHubs = async () => {
     try {
       setLoading(true);
+      setError(null);
+      console.log('[BusinessHubs] Starting to fetch business hubs...');
+      
       const hubs = await businessHubService.getAllBusinessHubs();
+      console.log('[BusinessHubs] Fetched hubs:', hubs?.length || 0);
+      
+      if (!hubs || hubs.length === 0) {
+        console.log('[BusinessHubs] No hubs returned');
+        setBusinessHubs([]);
+        return;
+      }
       
       // Fetch loading stations count for each hub
       const hubsWithStations = await Promise.all(
         hubs.map(async (hub) => {
-          const stations = await loadingStationService.getLoadingStationsByBusinessHub(hub.id);
-          return {
-            ...hub,
-            loadingStationsCount: stations.length
-          };
+          try {
+            const stations = await loadingStationService.getLoadingStationsByBusinessHub(hub.id);
+            return {
+              ...hub,
+              loadingStationsCount: stations.length
+            };
+          } catch (stationError) {
+            console.warn(`[BusinessHubs] Failed to fetch stations for hub ${hub.id}:`, stationError);
+            return {
+              ...hub,
+              loadingStationsCount: 0
+            };
+          }
         })
       );
       
+      console.log('[BusinessHubs] Final hubs with stations:', hubsWithStations.length);
       setBusinessHubs(hubsWithStations);
     } catch (err) {
-      console.error('Error fetching business hubs:', err);
-      setError('Failed to load business hubs');
+      console.error('[BusinessHubs] Error fetching business hubs:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load business hubs');
     } finally {
       setLoading(false);
     }
@@ -504,6 +527,16 @@ export default function BusinessHubs() {
                       <button className="block w-full text-left text-purple-600 hover:text-purple-700 font-medium text-sm">
                         Top-up
                       </button>
+                      <button
+                        onClick={() => {
+                          setAuditEntityId(hub.id);
+                          setAuditEntityName(hub.name);
+                          setShowAuditModal(true);
+                        }}
+                        className="block w-full text-left text-gray-600 hover:text-gray-700 font-medium text-sm"
+                      >
+                        View History
+                      </button>
                       <button 
                         onClick={() => handleDeleteClick(hub)}
                         className="block w-full text-left text-red-600 hover:text-red-700 font-medium text-sm"
@@ -908,6 +941,41 @@ export default function BusinessHubs() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Audit History Modal */}
+      {showAuditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-pure-white rounded-xl p-8 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-semibold text-deep-black">Audit History</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Viewing history for: <strong>{auditEntityName}</strong>
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowAuditModal(false);
+                  setAuditEntityId(null);
+                  setAuditEntityName(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <AuditHistory 
+              entityType="business_hub" 
+              entityId={auditEntityId || undefined}
+              showFilters={true}
+              compact={false}
+            />
           </div>
         </div>
       )}

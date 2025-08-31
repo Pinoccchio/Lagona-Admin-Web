@@ -10,26 +10,67 @@ type LoadingStationUpdate = Database['public']['Tables']['loading_stations']['Up
 export const loadingStationService = {
   async getAllLoadingStations() {
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('loading_stations')
-      .select(`
-        *,
-        business_hubs (
-          id,
-          bhcode,
-          name,
-          municipality
-        ),
-        users (
-          email,
-          phone_number,
-          full_name
-        )
-      `)
-      .order('created_at', { ascending: false })
+    
+    try {
+      console.log('[loadingStationService] Starting getAllLoadingStations...')
+      
+      // Check authentication first
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        console.error('[loadingStationService] Auth error:', JSON.stringify(authError, null, 2))
+        throw new Error(`Authentication error: ${authError.message || 'Unknown auth error'}`)
+      }
+      
+      if (!user) {
+        console.error('[loadingStationService] No user found - user must be authenticated to access loading stations')
+        throw new Error('User not authenticated. Please log in to access loading stations.')
+      }
+      
+      console.log('[loadingStationService] Authenticated user:', user.email, 'ID:', user.id)
+      
+      const { data, error } = await supabase
+        .from('loading_stations')
+        .select(`
+          *,
+          business_hubs (
+            id,
+            bhcode,
+            name,
+            municipality
+          ),
+          users!loading_stations_user_id_fkey (
+            email,
+            phone_number,
+            full_name
+          )
+        `)
+        .order('created_at', { ascending: false })
 
-    if (error) throw error
-    return data
+      if (error) {
+        console.error('[loadingStationService] Database error:', JSON.stringify(error, null, 2))
+        console.error('[loadingStationService] Error details:', {
+          code: error.code || 'No code',
+          message: error.message || 'No message',
+          details: error.details || 'No details',
+          hint: error.hint || 'No hint',
+          status: error.status || 'No status',
+          statusText: error.statusText || 'No status text'
+        })
+        throw new Error(`Database error: ${error.message || JSON.stringify(error)}`)
+      }
+      
+      console.log('[loadingStationService] Successfully fetched', data?.length || 0, 'loading stations')
+      return data
+    } catch (error) {
+      console.error('[loadingStationService] getAllLoadingStations error:', JSON.stringify(error, null, 2))
+      console.error('[loadingStationService] Error type:', typeof error)
+      if (error instanceof Error) {
+        console.error('[loadingStationService] Error message:', error.message)
+        console.error('[loadingStationService] Error stack:', error.stack)
+      }
+      throw error
+    }
   },
 
   async getLoadingStationById(id: string) {
@@ -60,14 +101,40 @@ export const loadingStationService = {
 
   async getLoadingStationsByBusinessHub(businessHubId: string) {
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('loading_stations')
-      .select('*')
-      .eq('business_hub_id', businessHubId)
-      .order('created_at', { ascending: false })
+    
+    try {
+      console.log('[loadingStationService] Fetching stations for business hub:', businessHubId)
+      
+      // Check authentication first
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        console.log('[loadingStationService] Auth issue, returning empty array')
+        return []
+      }
+      
+      const { data, error } = await supabase
+        .from('loading_stations')
+        .select('*')
+        .eq('business_hub_id', businessHubId)
+        .order('created_at', { ascending: false })
 
-    if (error) throw error
-    return data
+      if (error) {
+        console.error('[loadingStationService] Database error:', JSON.stringify(error, null, 2))
+        console.error('[loadingStationService] Error details:', {
+          code: error.code || 'No code',
+          message: error.message || 'No message',
+          details: error.details || 'No details',
+          hint: error.hint || 'No hint'
+        })
+        throw new Error(`Database error: ${error.message || JSON.stringify(error)}`)
+      }
+      
+      console.log('[loadingStationService] Found', data?.length || 0, 'stations')
+      return data || []
+    } catch (error) {
+      console.error('[loadingStationService] Error:', error)
+      return [] // Return empty array instead of throwing to prevent blocking the main query
+    }
   },
 
   async createLoadingStation(station: LoadingStationInsert) {
@@ -137,7 +204,7 @@ export const loadingStationService = {
         .from('loading_stations')
         .select(`
           *,
-          users (
+          users!loading_stations_user_id_fkey (
             id,
             email
           )

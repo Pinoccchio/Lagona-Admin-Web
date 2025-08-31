@@ -68,6 +68,12 @@ export const systemConfigService = {
   async updateConfig(key: string, value: any, updatedBy?: string) {
     const supabase = createClient()
     
+    // Get current user if updatedBy not provided
+    if (!updatedBy) {
+      const { data: { user } } = await supabase.auth.getUser()
+      updatedBy = user?.id
+    }
+    
     const { data, error } = await supabase
       .from('system_config')
       .update({

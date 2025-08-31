@@ -4,6 +4,23 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { systemConfigService } from './systemConfigService'
 
+// Debug helper function
+async function debugAuthState(supabase: any) {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    console.log('Auth session:', session ? 'EXISTS' : 'NULL')
+    console.log('Auth error:', error)
+    if (session?.user) {
+      console.log('User ID:', session.user.id)
+      console.log('User email:', session.user.email)
+    }
+    return session
+  } catch (error) {
+    console.error('Auth debug error:', error)
+    return null
+  }
+}
+
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row']
 type BusinessHubInsert = Database['public']['Tables']['business_hubs']['Insert']
 type BusinessHubUpdate = Database['public']['Tables']['business_hubs']['Update']
@@ -11,20 +28,85 @@ type BusinessHubUpdate = Database['public']['Tables']['business_hubs']['Update']
 export const businessHubService = {
   async getAllBusinessHubs() {
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('business_hubs')
-      .select(`
-        *,
-        users (
-          email,
-          phone_number,
-          full_name
-        )
-      `)
-      .order('created_at', { ascending: false })
+    
+    try {
+      console.log('[businessHubService] Starting getAllBusinessHubs...')
+      
+      // Debug auth state
+      const session = await debugAuthState(supabase)
+      
+      // First check if user is authenticated
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        console.error('[businessHubService] Auth error:', JSON.stringify(authError, null, 2))
+        throw new Error(`Authentication error: ${authError.message || 'Unknown auth error'}`)
+      }
+      
+      if (!user) {
+        console.error('[businessHubService] No user found - user must be authenticated to access business hubs')
+        throw new Error('User not authenticated. Please log in to access business hubs.')
+      }
+      
+      console.log('[businessHubService] Authenticated user:', user.email, 'ID:', user.id)
+      
+      // Check if user is admin - but don't block if this fails
+      try {
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (profileError) {
+          console.warn('[businessHubService] Profile fetch warning:', JSON.stringify(profileError, null, 2))
+          console.log('[businessHubService] Proceeding without role check - user may need profile setup')
+        } else {
+          console.log('[businessHubService] User role:', userProfile?.role)
+        }
+      } catch (roleCheckError) {
+        console.warn('[businessHubService] Role check failed, proceeding anyway:', roleCheckError)
+      }
+      
+      // Now make the query
+      console.log('[businessHubService] Making database query...')
+      const { data, error } = await supabase
+        .from('business_hubs')
+        .select(`
+          *,
+          users!business_hubs_user_id_fkey (
+            email,
+            phone_number,
+            full_name
+          )
+        `)
+        .order('created_at', { ascending: false })
 
-    if (error) throw error
-    return data
+      if (error) {
+        console.error('[businessHubService] Database error:', JSON.stringify(error, null, 2))
+        console.error('[businessHubService] Error details:', {
+          code: error.code || 'No code',
+          message: error.message || 'No message',
+          details: error.details || 'No details',
+          hint: error.hint || 'No hint',
+          status: error.status || 'No status',
+          statusText: error.statusText || 'No status text'
+        })
+        throw new Error(`Database error: ${error.message || JSON.stringify(error)}`)
+      }
+      
+      console.log('[businessHubService] Successfully fetched', data?.length || 0, 'business hubs')
+      return data
+    } catch (error) {
+      console.error('[businessHubService] getAllBusinessHubs error:', JSON.stringify(error, null, 2))
+      console.error('[businessHubService] Error type:', typeof error)
+      console.error('[businessHubService] Error instance:', error instanceof Error ? 'Error' : 'Other')
+      if (error instanceof Error) {
+        console.error('[businessHubService] Error message:', error.message)
+        console.error('[businessHubService] Error stack:', error.stack)
+      }
+      throw error
+    }
   },
 
   async getBusinessHubById(id: string) {
@@ -117,7 +199,7 @@ export const businessHubService = {
     const supabase = createClient()
     
     try {
-      // Update business hub
+      // Update business hub (triggers will handle audit logging and last_modified_by)
       const { data: hubData, error: hubError } = await supabase
         .from('business_hubs')
         .update(updates)
