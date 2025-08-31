@@ -2,14 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { analyticsService } from '@/services/analyticsService';
+import { approvalService } from '@/services/approvalService';
 
-export default function DashboardOverview() {
+interface DashboardOverviewProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export default function DashboardOverview({ onNavigate }: DashboardOverviewProps) {
   const [loading, setLoading] = useState(true);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingCounts, setPendingCounts] = useState({
+    riders: 0,
+    merchants: 0,
+    businessHubs: 0,
+    loadingStations: 0,
+    shareholders: 0,
+    total: 0
+  });
 
   useEffect(() => {
     fetchDashboardData();
+    fetchPendingCounts();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -22,6 +36,24 @@ export default function DashboardOverview() {
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPendingCounts = async () => {
+    try {
+      const counts = await approvalService.getPendingCounts();
+      setPendingCounts(counts);
+    } catch (error) {
+      console.error('Error fetching pending counts:', error);
+      // Set default empty counts on error
+      setPendingCounts({
+        riders: 0,
+        merchants: 0,
+        businessHubs: 0,
+        loadingStations: 0,
+        shareholders: 0,
+        total: 0
+      });
     }
   };
 
@@ -120,7 +152,7 @@ export default function DashboardOverview() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-8">
       {/* Enhanced Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
@@ -146,6 +178,70 @@ export default function DashboardOverview() {
           </div>
         ))}
       </div>
+
+      {/* Pending Approvals Section */}
+      {pendingCounts.total > 0 && (
+        <div className="bg-pure-white rounded-2xl p-8 lagona-shadow hover:shadow-2xl transition-all duration-300 border border-yellow-200/50">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-yellow-800">Pending Approvals</h2>
+              <p className="text-sm text-yellow-600 mt-1">{pendingCounts.total} items require your attention</p>
+            </div>
+            <div className="p-3 bg-gradient-to-r from-yellow-100 to-amber-100 rounded-xl">
+              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            {pendingCounts.riders > 0 && (
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                <div className="text-2xl font-bold text-blue-700">{pendingCounts.riders}</div>
+                <div className="text-sm text-blue-600 font-medium">Riders</div>
+              </div>
+            )}
+            {pendingCounts.merchants > 0 && (
+              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
+                <div className="text-2xl font-bold text-green-700">{pendingCounts.merchants}</div>
+                <div className="text-sm text-green-600 font-medium">Merchants</div>
+              </div>
+            )}
+            {pendingCounts.businessHubs > 0 && (
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+                <div className="text-2xl font-bold text-purple-700">{pendingCounts.businessHubs}</div>
+                <div className="text-sm text-purple-600 font-medium">Business Hubs</div>
+              </div>
+            )}
+            {pendingCounts.loadingStations > 0 && (
+              <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-xl p-4 border border-teal-200">
+                <div className="text-2xl font-bold text-teal-700">{pendingCounts.loadingStations}</div>
+                <div className="text-sm text-teal-600 font-medium">Loading Stations</div>
+              </div>
+            )}
+            {pendingCounts.shareholders > 0 && (
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
+                <div className="text-2xl font-bold text-orange-700">{pendingCounts.shareholders}</div>
+                <div className="text-sm text-orange-600 font-medium">Shareholders</div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button className="group px-4 py-2 bg-gradient-to-r from-primary-orange to-primary-yellow text-white rounded-lg font-semibold hover:shadow-lg transition-all duration-200 hover:scale-105">
+              <div className="flex items-center space-x-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>Review All Pending</span>
+              </div>
+            </button>
+            <button className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-all duration-200">
+              View Details
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -241,7 +337,7 @@ export default function DashboardOverview() {
       </div>
 
       {/* Enhanced Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
         {/* Quick Actions Card */}
         <div className="bg-pure-white rounded-2xl p-6 lagona-shadow hover:shadow-2xl transition-all duration-300 border border-gray-100/50">
           <div className="flex items-center mb-6">
@@ -256,28 +352,64 @@ export default function DashboardOverview() {
             </div>
           </div>
           <div className="space-y-3">
-            <button className="group w-full lagona-gradient text-pure-white py-4 rounded-xl font-bold lagona-hover shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+            <button 
+              onClick={() => onNavigate?.('business-hubs')}
+              className="group w-full lagona-gradient text-pure-white py-4 rounded-xl font-bold lagona-hover shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+            >
               <div className="flex items-center justify-center space-x-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H7m5 0v-5a2 2 0 00-2-2H8a2 2 0 00-2 2v5m5 0V7a2 2 0 012-2h4a2 2 0 012 2v4.8"/>
                 </svg>
-                <span>Create Business Hub</span>
+                <span>Manage Business Hubs</span>
               </div>
             </button>
-            <button className="group w-full bg-gray-50 hover:bg-gradient-to-r hover:from-primary-orange/10 hover:to-primary-yellow/10 text-gray-700 hover:text-gray-800 py-4 rounded-xl font-semibold transition-all duration-300 border border-gray-200 hover:border-primary-orange/30">
+            {pendingCounts.total > 0 && (
+              <button 
+                onClick={() => {
+                  // Navigate to the component with most pending items
+                  const maxPending = Math.max(
+                    pendingCounts.riders, 
+                    pendingCounts.merchants, 
+                    pendingCounts.businessHubs, 
+                    pendingCounts.loadingStations,
+                    pendingCounts.shareholders
+                  );
+                  if (maxPending === pendingCounts.riders) onNavigate?.('riders');
+                  else if (maxPending === pendingCounts.merchants) onNavigate?.('merchants');
+                  else if (maxPending === pendingCounts.businessHubs) onNavigate?.('business-hubs');
+                  else if (maxPending === pendingCounts.loadingStations) onNavigate?.('loading-stations');
+                  else onNavigate?.('shareholders');
+                }}
+                className="group w-full bg-yellow-50 hover:bg-gradient-to-r hover:from-yellow-100 hover:to-amber-100 text-yellow-700 hover:text-yellow-800 py-4 rounded-xl font-semibold transition-all duration-300 border border-yellow-200 hover:border-yellow-300"
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  <span>Review Pending ({pendingCounts.total})</span>
+                </div>
+              </button>
+            )}
+            <button 
+              onClick={() => onNavigate?.('riders')}
+              className="group w-full bg-gray-50 hover:bg-gradient-to-r hover:from-primary-orange/10 hover:to-primary-yellow/10 text-gray-700 hover:text-gray-800 py-4 rounded-xl font-semibold transition-all duration-300 border border-gray-200 hover:border-primary-orange/30"
+            >
               <div className="flex items-center justify-center space-x-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                 </svg>
-                <span>Approve Pending Users</span>
+                <span>Manage Riders</span>
               </div>
             </button>
-            <button className="group w-full bg-gray-50 hover:bg-gradient-to-r hover:from-primary-orange/10 hover:to-primary-yellow/10 text-gray-700 hover:text-gray-800 py-4 rounded-xl font-semibold transition-all duration-300 border border-gray-200 hover:border-primary-orange/30">
+            <button 
+              onClick={() => onNavigate?.('system-config')}
+              className="group w-full bg-gray-50 hover:bg-gradient-to-r hover:from-primary-orange/10 hover:to-primary-yellow/10 text-gray-700 hover:text-gray-800 py-4 rounded-xl font-semibold transition-all duration-300 border border-gray-200 hover:border-primary-orange/30"
+            >
               <div className="flex items-center justify-center space-x-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
                 </svg>
-                <span>Update Commission Rates</span>
+                <span>System Configuration</span>
               </div>
             </button>
           </div>

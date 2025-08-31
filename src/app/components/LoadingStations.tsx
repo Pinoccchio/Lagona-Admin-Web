@@ -46,6 +46,7 @@ export default function LoadingStations() {
   const [error, setError] = useState<string | null>(null);
   const [statistics, setStatistics] = useState<any>(null);
   const [systemCommissionRate, setSystemCommissionRate] = useState<number>(20);
+  const [loadingStationBonusRate, setLoadingStationBonusRate] = useState<number>(25); // Default fallback
   const [formData, setFormData] = useState<FormData>({
     name: '',
     area: '',
@@ -68,6 +69,14 @@ export default function LoadingStations() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteConfirmationName, setDeleteConfirmationName] = useState('');
+  
+  // Top-up modal states
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [selectedStationForTopUp, setSelectedStationForTopUp] = useState<LoadingStation | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [topUpSuccess, setTopUpSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLoadingStations();
@@ -79,10 +88,12 @@ export default function LoadingStations() {
   const loadSystemCommissionRate = async () => {
     try {
       const commissionRates = await systemConfigService.getCommissionRates();
+      const bonusRates = await systemConfigService.getTopUpBonuses();
       setSystemCommissionRate(commissionRates.loadingStation);
+      setLoadingStationBonusRate(bonusRates.loadingStationBonus);
     } catch (error) {
-      console.error('Error loading system commission rate:', error);
-      // Keep default value if loading fails
+      console.error('Error loading system commission and bonus rates:', error);
+      // Keep default values if loading fails
     }
   };
 
@@ -338,6 +349,116 @@ export default function LoadingStations() {
     setIsDeleting(false);
   };
 
+  const handleTopUpClick = (station: LoadingStation) => {
+    setSelectedStationForTopUp(station);
+    setTopUpAmount('');
+    setTopUpError(null);
+    setTopUpSuccess(null);
+    setShowTopUpModal(true);
+  };
+
+  const calculateTopUpBonus = (amount: number): number => {
+    // Dynamic bonus rate from system config
+    return amount * (loadingStationBonusRate / 100);
+  };
+
+  const calculateTotalTopUp = (amount: number): number => {
+    return amount + calculateTopUpBonus(amount);
+  };
+
+  const getBusinessHubForStation = (stationId: string) => {
+    const station = loadingStations.find(s => s.id === stationId);
+    if (!station?.business_hub_id) return null;
+    return businessHubs.find(hub => hub.id === station.business_hub_id);
+  };
+
+  const handleTopUpSubmit = async () => {
+    if (!selectedStationForTopUp) return;
+
+    const amount = parseFloat(topUpAmount);
+    
+    // Validation
+    if (isNaN(amount) || amount <= 0) {
+      setTopUpError('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    if (amount < 50) {
+      setTopUpError('Minimum top-up amount is ₱50');
+      return;
+    }
+
+    if (amount > 50000) {
+      setTopUpError('Maximum top-up amount is ₱50,000');
+      return;
+    }
+
+    // Find the parent Business Hub
+    const parentHub = getBusinessHubForStation(selectedStationForTopUp.id);
+    if (!parentHub) {
+      setTopUpError('Parent Business Hub not found');
+      return;
+    }
+
+    // Check if Business Hub has sufficient balance
+    const requiredAmount = amount; // Business Hub pays the base amount
+    if ((parentHub.current_balance || 0) < requiredAmount) {
+      setTopUpError(`Insufficient funds in Business Hub. Available: ₱${(parentHub.current_balance || 0).toLocaleString()}, Required: ₱${requiredAmount.toLocaleString()}`);
+      return;
+    }
+
+    try {
+      setTopUpLoading(true);
+      setTopUpError(null);
+
+      const bonusAmount = calculateTopUpBonus(amount);
+      const totalAmount = calculateTotalTopUp(amount);
+
+      // Update Business Hub balance (deduct base amount)
+      await businessHubService.updateBusinessHub(parentHub.id, {
+        current_balance: (parentHub.current_balance || 0) - amount,
+        updated_at: new Date().toISOString()
+      });
+
+      // Update Loading Station balance (add amount + bonus)
+      await loadingStationService.updateLoadingStation(selectedStationForTopUp.id, {
+        current_balance: ((selectedStationForTopUp as any).current_balance || 0) + totalAmount,
+        updated_at: new Date().toISOString()
+      });
+
+      setTopUpSuccess(`Successfully added ₱${totalAmount.toLocaleString()} (₱${amount.toLocaleString()} + ₱${bonusAmount.toLocaleString()} bonus) to ${selectedStationForTopUp.name}`);
+      
+      // Refresh both lists to show updated balances
+      await fetchLoadingStations();
+      await fetchBusinessHubs();
+      await fetchStatistics();
+      
+      // Clear form
+      setTopUpAmount('');
+      
+      // Close modal after delay
+      setTimeout(() => {
+        setShowTopUpModal(false);
+        setSelectedStationForTopUp(null);
+        setTopUpSuccess(null);
+      }, 3000);
+
+    } catch (err: any) {
+      console.error('Error processing top-up:', err);
+      setTopUpError(err.message || 'Failed to process top-up');
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  const handleTopUpCancel = () => {
+    setShowTopUpModal(false);
+    setSelectedStationForTopUp(null);
+    setTopUpAmount('');
+    setTopUpError(null);
+    setTopUpSuccess(null);
+  };
+
   return (
     <div className="space-y-6">
       {/* Success Message */}
@@ -572,7 +693,10 @@ export default function LoadingStations() {
                       <button className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm">
                         View Riders
                       </button>
-                      <button className="block w-full text-left text-purple-600 hover:text-purple-700 font-medium text-sm">
+                      <button 
+                        onClick={() => handleTopUpClick(station)}
+                        className="block w-full text-left text-purple-600 hover:text-purple-700 font-medium text-sm"
+                      >
                         Top-up
                       </button>
                       <button 
@@ -986,6 +1110,172 @@ export default function LoadingStations() {
                   </>
                 ) : (
                   'Delete Loading Station'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top-up Modal */}
+      {showTopUpModal && selectedStationForTopUp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl border border-gray-100">
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-purple-50 rounded-xl">
+                  <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Top-up Loading Station</h2>
+                  <p className="text-gray-600 mt-1">Fund from Business Hub with {loadingStationBonusRate}% bonus</p>
+                </div>
+              </div>
+              <button 
+                onClick={handleTopUpCancel}
+                disabled={topUpLoading}
+                className="text-gray-400 hover:text-gray-600 text-2xl hover:bg-gray-100 w-10 h-10 rounded-full flex items-center justify-center transition-colors disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Station Information */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-6">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Station Name:</span>
+                  <span className="text-sm font-semibold text-gray-900">{selectedStationForTopUp.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">LSCODE:</span>
+                  <span className="text-sm font-mono bg-gray-200 px-2 py-1 rounded text-gray-900">{selectedStationForTopUp.lscode}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Current Balance:</span>
+                  <span className="text-sm font-semibold text-blue-600">₱{((selectedStationForTopUp as any).current_balance || 0).toLocaleString()}</span>
+                </div>
+                {(() => {
+                  const parentHub = getBusinessHubForStation(selectedStationForTopUp.id);
+                  return parentHub ? (
+                    <div className="flex justify-between items-center border-t border-gray-300 pt-2">
+                      <span className="text-sm font-medium text-gray-600">Business Hub:</span>
+                      <span className="text-sm text-gray-900">{parentHub.name}</span>
+                    </div>
+                  ) : null;
+                })()}
+                {(() => {
+                  const parentHub = getBusinessHubForStation(selectedStationForTopUp.id);
+                  return parentHub ? (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-600">Hub Balance:</span>
+                      <span className="text-sm font-semibold text-orange-600">₱{(parentHub.current_balance || 0).toLocaleString()}</span>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+
+            {/* Success Message */}
+            {topUpSuccess && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-green-600">{topUpSuccess}</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {topUpError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-red-600">{topUpError}</p>
+              </div>
+            )}
+
+            {/* Top-up Form */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Top-up Amount (₱)
+                </label>
+                <input
+                  type="number"
+                  value={topUpAmount}
+                  onChange={(e) => setTopUpAmount(e.target.value)}
+                  placeholder="Enter amount (minimum ₱50)"
+                  disabled={topUpLoading}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 text-gray-900 placeholder-gray-400 disabled:opacity-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Minimum: ₱50 • Maximum: ₱50,000
+                </p>
+              </div>
+
+              {/* Bonus Calculation Preview */}
+              {topUpAmount && !isNaN(parseFloat(topUpAmount)) && parseFloat(topUpAmount) > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                  <h4 className="text-sm font-semibold text-purple-800 mb-2">Transaction Preview</h4>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-purple-700">Deducted from Hub:</span>
+                      <span className="font-medium text-red-600">₱{parseFloat(topUpAmount).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-purple-700">Station receives:</span>
+                      <span className="font-medium text-purple-900">₱{parseFloat(topUpAmount).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-purple-700">{loadingStationBonusRate}% Bonus:</span>
+                      <span className="font-medium text-green-600">₱{calculateTopUpBonus(parseFloat(topUpAmount)).toLocaleString()}</span>
+                    </div>
+                    <div className="border-t border-purple-300 pt-1 flex justify-between">
+                      <span className="font-semibold text-purple-800">Total to Station:</span>
+                      <span className="font-bold text-purple-900">₱{calculateTotalTopUp(parseFloat(topUpAmount)).toLocaleString()}</span>
+                    </div>
+                    {(() => {
+                      const parentHub = getBusinessHubForStation(selectedStationForTopUp.id);
+                      return parentHub ? (
+                        <div className="space-y-1 border-t border-gray-300 pt-1">
+                          <div className="flex justify-between text-xs text-gray-600">
+                            <span>Hub new balance:</span>
+                            <span className="font-medium">₱{((parentHub.current_balance || 0) - parseFloat(topUpAmount)).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-600">
+                            <span>Station new balance:</span>
+                            <span className="font-medium">₱{(((selectedStationForTopUp as any).current_balance || 0) + calculateTotalTopUp(parseFloat(topUpAmount))).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex space-x-4 mt-6">
+              <button
+                onClick={handleTopUpCancel}
+                disabled={topUpLoading}
+                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTopUpSubmit}
+                disabled={topUpLoading || !topUpAmount || isNaN(parseFloat(topUpAmount)) || parseFloat(topUpAmount) <= 0}
+                className="flex-1 bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {topUpLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  'Confirm Top-up'
                 )}
               </button>
             </div>

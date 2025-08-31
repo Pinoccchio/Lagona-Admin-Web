@@ -6,9 +6,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import DashboardOverview from '../components/DashboardOverview';
+import Shareholders from '../components/Shareholders';
 import BusinessHubs from '../components/BusinessHubs';
 import LoadingStations from '../components/LoadingStations';
-import UserManagement from '../components/UserManagement';
+import Merchants from '../components/Merchants';
+import Riders from '../components/Riders';
 import SystemConfig from '../components/SystemConfig';
 import Analytics from '../components/Analytics';
 
@@ -81,9 +83,11 @@ export default function Dashboard() {
   const getPageTitle = () => {
     switch (activeTab) {
       case 'overview': return 'Dashboard Overview';
+      case 'shareholders': return 'Shareholders Management';
       case 'business-hubs': return 'Business Hubs Management';
       case 'loading-stations': return 'Loading Stations';
-      case 'user-management': return 'User Management';
+      case 'merchants': return 'Merchants Management';
+      case 'riders': return 'Riders Management';
       case 'system-config': return 'System Configuration';
       case 'analytics': return 'Analytics & Reports';
       default: return 'Dashboard';
@@ -93,9 +97,11 @@ export default function Dashboard() {
   const getPageDescription = () => {
     switch (activeTab) {
       case 'overview': return 'Platform performance and key metrics overview';
+      case 'shareholders': return 'Manage company shareholders and dividend distributions';
       case 'business-hubs': return 'Manage municipality and city level operations';
       case 'loading-stations': return 'Oversee area-level delivery stations';
-      case 'user-management': return 'Handle user registrations and approvals';
+      case 'merchants': return 'Handle merchant registrations and business partnerships';
+      case 'riders': return 'Manage delivery personnel and rider operations';
       case 'system-config': return 'Configure platform settings and parameters';
       case 'analytics': return 'Comprehensive reports and business intelligence';
       default: return 'LAGONA administrative dashboard';
@@ -105,13 +111,17 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <DashboardOverview />;
+        return <DashboardOverview onNavigate={setActiveTab} />;
+      case 'shareholders':
+        return <Shareholders />;
       case 'business-hubs':
         return <BusinessHubs />;
       case 'loading-stations':
         return <LoadingStations />;
-      case 'user-management':
-        return <UserManagement />;
+      case 'merchants':
+        return <Merchants />;
+      case 'riders':
+        return <Riders />;
       case 'system-config':
         return <SystemConfig />;
       case 'analytics':
@@ -240,8 +250,10 @@ export default function Dashboard() {
         
         {/* Enhanced Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6 md:p-8">
-            {renderContent()}
+          <div className="p-6 md:p-8 min-h-screen">
+            <div className="max-w-full">
+              {renderContent()}
+            </div>
           </div>
         </main>
       </div>
