@@ -135,31 +135,31 @@ export const riderService = {
         full_name: rider.users?.full_name || '',
         email: rider.users?.email || '',
         phone_number: rider.users?.phone_number || '',
-        address: '', // Not stored in simplified schema
-        emergency_contact: { name: '', relationship: '', phone_number: '' }, // Not stored in simplified schema
+        address: rider.address || '',
+        emergency_contact: rider.emergency_contact || { name: '', relationship: '', phone_number: '' },
         vehicle_type: rider.vehicle_type as 'motorcycle' | 'bicycle' | 'car' | 'tricycle',
-        vehicle_details: {
+        vehicle_details: rider.vehicle_details || {
           brand: '',
           model: '',
           year: 0,
           color: '',
           plate_number: rider.vehicle_plate || ''
         },
-        documents: {}, // Not stored in simplified schema
-        profile_photo: '',
+        documents: rider.documents || {},
+        profile_photo: rider.profile_photo || '',
         commission_rate: rider.commission_rate || 18,
         total_deliveries: rider.total_deliveries || 0,
-        completed_deliveries: 0, // Not in schema, using 0
-        cancelled_deliveries: 0, // Not in schema, using 0
+        completed_deliveries: rider.completed_deliveries || 0,
+        cancelled_deliveries: rider.cancelled_deliveries || 0,
         total_earnings: rider.total_earnings || 0,
         current_balance: rider.current_balance || 0,
-        average_rating: 0, // Not in schema, using 0
-        rating_count: 0, // Not in schema, using 0
-        is_online: false, // Not in schema, using false
-        is_available: false, // Not in schema, using false
-        current_location: undefined,
+        average_rating: rider.average_rating || 0,
+        rating_count: rider.rating_count || 0,
+        is_online: rider.is_online || false,
+        is_available: rider.is_available || false,
+        current_location: rider.current_location,
         status: rider.status as 'pending' | 'active' | 'inactive' | 'suspended',
-        rejection_reason: '',
+        rejection_reason: rider.rejection_reason || '',
         created_at: rider.created_at,
         updated_at: rider.updated_at,
         approved_at: '',
