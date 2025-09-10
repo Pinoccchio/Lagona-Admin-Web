@@ -473,24 +473,24 @@ export default function Riders() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
+                      <div className="space-y-2">
                         <button
                           onClick={() => openDetailsModal(rider)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="block w-full text-left text-blue-600 hover:text-blue-700 font-medium text-sm"
                         >
                           View
                         </button>
                         {rider.status === 'pending' && (
                           <button
                             onClick={() => setSelectedRider(rider) || setShowDocumentsModal(true)}
-                            className="text-purple-600 hover:text-purple-900 font-medium"
+                            className="block w-full text-left text-purple-600 hover:text-purple-700 font-medium text-sm"
                           >
                             View Documents
                           </button>
                         )}
                         <button
                           onClick={() => openEditModal(rider)}
-                          className="text-green-600 hover:text-green-900"
+                          className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm"
                         >
                           Edit
                         </button>
@@ -498,13 +498,13 @@ export default function Riders() {
                           <>
                             <button
                               onClick={() => handleApproveRider(rider.id)}
-                              className="text-green-600 hover:text-green-900 font-medium"
+                              className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm"
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => handleRejectRider(rider.id)}
-                              className="text-red-600 hover:text-red-900 font-medium"
+                              className="block w-full text-left text-red-600 hover:text-red-700 font-medium text-sm"
                             >
                               Reject
                             </button>
@@ -512,7 +512,7 @@ export default function Riders() {
                         )}
                         <button
                           onClick={() => handleDeleteRider(rider.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="block w-full text-left text-red-600 hover:text-red-700 font-medium text-sm"
                         >
                           Delete
                         </button>

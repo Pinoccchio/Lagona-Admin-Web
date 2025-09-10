@@ -384,18 +384,20 @@ export default function Shareholders() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => openEditModal(shareholder)}
-                      className="text-blue-600 hover:text-blue-900 mr-4"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClick(shareholder)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Remove
-                    </button>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => openEditModal(shareholder)}
+                        className="block w-full text-left text-blue-600 hover:text-blue-700 font-medium text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClick(shareholder)}
+                        className="block w-full text-left text-red-600 hover:text-red-700 font-medium text-sm"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
