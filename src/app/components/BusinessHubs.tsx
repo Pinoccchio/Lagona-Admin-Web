@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { businessHubService } from '@/services/businessHubService';
 import { loadingStationService } from '@/services/loadingStationService';
 import { systemConfigService } from '@/services/systemConfigService';
@@ -13,6 +14,7 @@ type BusinessHub = Database['public']['Tables']['business_hubs']['Row'] & {
     email: string | null;
     phone_number: string | null;
     full_name: string | null;
+    status: string | null;
   } | null;
 };
 
@@ -39,6 +41,12 @@ export default function BusinessHubs() {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditEntityId, setAuditEntityId] = useState<string | null>(null);
   const [auditEntityName, setAuditEntityName] = useState<string | null>(null);
+  
+  // State for dropdown actions menu
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{[key: string]: 'up' | 'down'}>({});
+  const [dropdownCoords, setDropdownCoords] = useState<{[key: string]: {top: number, left: number, right?: number}}>({});
+  const [selectedHubForDropdown, setSelectedHubForDropdown] = useState<BusinessHub | null>(null);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     municipality: '',
@@ -73,18 +81,74 @@ export default function BusinessHubs() {
   // System config for dynamic bonus rates
   const [businessHubBonusRate, setBusinessHubBonusRate] = useState<number>(50); // Default fallback
 
+  // Status change templates
+  const statusTemplates = {
+    pending: [
+      'Initial registration - awaiting document review',
+      'Additional documentation required',
+      'Pending verification of business credentials',
+      'Awaiting admin review and approval'
+    ],
+    active: [
+      'All requirements met - account activated',
+      'Payment received - account reactivated', 
+      'Investigation resolved - account restored',
+      'Documents approved - welcome to LAGONA',
+      'Manual activation by admin',
+      'Account restored after suspension review'
+    ],
+    inactive: [
+      'Account deactivated per user request',
+      'Business closure - voluntary deactivation',
+      'Extended inactivity - account suspended',
+      'Failed to meet operational requirements',
+      'Administrative deactivation'
+    ],
+    suspended: [
+      'Payment overdue - account suspended until payment',
+      'Customer complaints received - under investigation',
+      'Policy violation - temporary suspension',
+      'Document verification issues - suspended pending review',
+      'Quality concerns - suspended for evaluation',
+      'Temporary suspension for system maintenance'
+    ]
+  };
+
   // View Stations modal states
   const [showViewStationsModal, setShowViewStationsModal] = useState(false);
   const [selectedHubForStations, setSelectedHubForStations] = useState<BusinessHub | null>(null);
   const [loadingStationsData, setLoadingStationsData] = useState<any[]>([]);
   const [stationsLoading, setStationsLoading] = useState(false);
   const [stationsError, setStationsError] = useState<string | null>(null);
+  
+  // Status management modal states
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedHubForStatus, setSelectedHubForStatus] = useState<BusinessHub | null>(null);
+  const [newStatus, setNewStatus] = useState('');
+  const [statusChangeReason, setStatusChangeReason] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [notesAction, setNotesAction] = useState<'replace' | 'append'>('append');
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusSuccess, setStatusSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBusinessHubs();
     fetchStatistics();
     loadSystemBonusRates();
   }, []);
+
+  // Handle clicking outside dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openDropdown && !(event.target as Element)?.closest('.dropdown-container')) {
+        setOpenDropdown(null);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openDropdown]);
 
   const loadSystemBonusRates = async () => {
     try {
@@ -155,6 +219,7 @@ export default function BusinessHubs() {
     switch (status) {
       case 'active': return 'text-green-600 bg-green-100';
       case 'inactive': return 'text-red-600 bg-red-100';
+      case 'suspended': return 'text-red-600 bg-red-100';
       case 'pending': return 'text-yellow-600 bg-yellow-100';
       default: return 'text-gray-600 bg-gray-100';
     }
@@ -507,6 +572,239 @@ export default function BusinessHubs() {
     setStationsLoading(false);
   };
 
+  // Helper function to format timestamp
+  const formatTimestamp = () => {
+    return new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+  };
+
+  // Helper function to get templates for current status
+  const getTemplatesForStatus = (status: string) => {
+    return statusTemplates[status as keyof typeof statusTemplates] || [];
+  };
+
+  // Helper function to handle template selection
+  const handleTemplateSelection = (template: string) => {
+    if (template === 'custom') {
+      setStatusChangeReason('');
+      setSelectedTemplate('custom');
+    } else {
+      setStatusChangeReason(template);
+      setSelectedTemplate(template);
+    }
+  };
+
+  // Helper function to format final notes
+  const formatFinalNotes = (currentNotes: string, newNote: string, action: 'append' | 'replace', statusChange?: { from: string, to: string }) => {
+    const timestamp = formatTimestamp();
+    const adminName = 'Admin'; // You can get this from auth context
+    
+    let formattedNewNote = `[${timestamp}] ${adminName}`;
+    if (statusChange) {
+      formattedNewNote += ` - Status: ${statusChange.from} → ${statusChange.to}`;
+    }
+    formattedNewNote += `\n${newNote}`;
+    
+    if (action === 'append' && currentNotes?.trim()) {
+      return `${currentNotes}\n\n${formattedNewNote}`;
+    } else {
+      return formattedNewNote;
+    }
+  };
+
+  // Preview of final notes
+  const getNotesPreview = () => {
+    if (!selectedHubForStatus || !statusChangeReason.trim()) return '';
+    
+    const currentNotes = selectedHubForStatus.admin_notes || '';
+    const statusChange = {
+      from: selectedHubForStatus.users?.status || 'unknown',
+      to: newStatus
+    };
+    
+    return formatFinalNotes(currentNotes, statusChangeReason, notesAction, statusChange);
+  };
+
+  const handleStatusChangeClick = (hub: BusinessHub) => {
+    setSelectedHubForStatus(hub);
+    setNewStatus(hub.users?.status || 'pending');
+    setStatusChangeReason('');
+    setSelectedTemplate('');
+    setNotesAction('append');
+    setStatusError(null);
+    setStatusSuccess(null);
+    setShowStatusModal(true);
+  };
+
+  const handleStatusChangeSubmit = async () => {
+    if (!selectedHubForStatus || !newStatus) return;
+
+    try {
+      setStatusLoading(true);
+      setStatusError(null);
+
+      // Format final notes with timestamp and status change context
+      const statusChange = {
+        from: selectedHubForStatus.users?.status || 'unknown',
+        to: newStatus
+      };
+      
+      const finalNotes = statusChangeReason.trim() 
+        ? formatFinalNotes(selectedHubForStatus.admin_notes || '', statusChangeReason, notesAction, statusChange)
+        : selectedHubForStatus.admin_notes || '';
+
+      // Update user account status with formatted admin notes
+      await businessHubService.updateBusinessHubStatus(selectedHubForStatus.id, {
+        status: newStatus,
+        notes: finalNotes
+      });
+
+      setStatusSuccess(`Successfully updated ${selectedHubForStatus.name} status to ${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}`);
+      
+      // Refresh the hub list to show updated status
+      await fetchBusinessHubs();
+      await fetchStatistics();
+      
+      // Close modal after delay
+      setTimeout(() => {
+        setShowStatusModal(false);
+        setSelectedHubForStatus(null);
+        setStatusSuccess(null);
+      }, 2500);
+
+    } catch (err: any) {
+      console.error('Error updating business hub status:', err);
+      setStatusError(err.message || 'Failed to update status');
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
+  const handleStatusChangeCancel = () => {
+    setShowStatusModal(false);
+    setSelectedHubForStatus(null);
+    setNewStatus('');
+    setStatusChangeReason('');
+    setSelectedTemplate('');
+    setNotesAction('append');
+    setStatusError(null);
+    setStatusSuccess(null);
+  };
+
+  // Click outside handler for dropdown - simplified version
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openDropdown) {
+        const target = event.target as Element;
+        
+        // Only close if clicking completely outside all dropdown-related elements
+        const isRelatedToDropdown = target.closest('.dropdown-container') || 
+                                   target.closest('.enhanced-dropdown') ||
+                                   target.closest('[class*="dropdown"]');
+        
+        if (!isRelatedToDropdown) {
+          setOpenDropdown(null);
+          setSelectedHubForDropdown(null);
+        }
+      }
+    };
+
+    // Only attach listeners if dropdown is open
+    if (openDropdown) {
+      // Use a timeout to prevent immediate closure when opening
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('click', handleClickOutside, true);
+      }, 50);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('click', handleClickOutside, true);
+      };
+    }
+  }, [openDropdown]);
+
+  // Toggle dropdown for specific hub with smart positioning
+  const toggleDropdown = (hubId: string, event: React.MouseEvent) => {
+    if (openDropdown === hubId) {
+      setOpenDropdown(null);
+      setSelectedHubForDropdown(null);
+      return;
+    }
+
+    // Find and store the selected hub
+    const hub = businessHubs.find(h => h.id === hubId);
+    if (!hub) {
+      console.error('Hub not found for ID:', hubId);
+      return;
+    }
+    setSelectedHubForDropdown(hub);
+
+    // Calculate smart positioning with absolute coordinates for portal
+    const button = event.currentTarget as HTMLElement;
+    const buttonRect = button.getBoundingClientRect();
+    
+    // Estimate dropdown height (approximately 280px for 6 items + separators) and width
+    const dropdownHeight = 280;
+    const dropdownWidth = 224; // w-56 = 14rem = 224px
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    
+    // Calculate available space in all directions
+    const spaceBelow = viewportHeight - buttonRect.bottom;
+    const spaceAbove = buttonRect.top;
+    const spaceRight = viewportWidth - buttonRect.right;
+    const spaceLeft = buttonRect.left;
+    
+    // Decide vertical positioning: show upward if not enough space below and enough space above
+    const shouldShowUp = spaceBelow < dropdownHeight && spaceAbove > dropdownHeight;
+    
+    // Calculate horizontal positioning: prefer right alignment but switch if not enough space
+    const shouldAlignRight = spaceRight >= dropdownWidth;
+    
+    // Calculate absolute coordinates
+    let top: number;
+    let left: number;
+    let right: number | undefined;
+    
+    if (shouldShowUp) {
+      top = buttonRect.top - dropdownHeight - 8; // 8px gap
+    } else {
+      top = buttonRect.bottom + 8; // 8px gap
+    }
+    
+    if (shouldAlignRight) {
+      left = buttonRect.right - dropdownWidth;
+    } else {
+      left = Math.max(8, buttonRect.left); // Ensure it doesn't go off-screen
+      // If still not enough space, adjust width dynamically
+      if (left + dropdownWidth > viewportWidth - 8) {
+        right = 8;
+        left = Math.max(8, viewportWidth - dropdownWidth - 8);
+      }
+    }
+    
+    // Ensure dropdown doesn't go above viewport
+    top = Math.max(8, Math.min(top, viewportHeight - dropdownHeight - 8));
+    
+    setDropdownPosition(prev => ({
+      ...prev,
+      [hubId]: shouldShowUp ? 'up' : 'down'
+    }));
+    
+    setDropdownCoords(prev => ({
+      ...prev,
+      [hubId]: { top, left, right }
+    }));
+    
+    setOpenDropdown(hubId);
+  };
+
   return (
     <div className="space-y-6">
       {/* Success Message */}
@@ -551,7 +849,7 @@ export default function BusinessHubs() {
             <div>
               <p className="text-sm font-medium text-gray-600">Active Hubs</p>
               <p className="text-3xl font-bold text-green-600 mt-2">
-                {loading ? '...' : (statistics?.activeHubs || displayHubs.filter(h => h.status === 'active').length)}
+                {loading ? '...' : (statistics?.activeHubs || displayHubs.filter(h => h.users?.status === 'active').length)}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-green-50">
@@ -601,8 +899,9 @@ export default function BusinessHubs() {
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-deep-black">Business Hubs Directory</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="relative business-hubs-table">
+          <div className="min-w-full">
+            <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Hub Details</th>
@@ -695,9 +994,10 @@ export default function BusinessHubs() {
                   {/* Status & Date */}
                   <td className="px-6 py-4">
                     <div className="mb-2">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(hub.status || 'pending')}`}>
-                        {(hub.status || 'pending').charAt(0).toUpperCase() + (hub.status || 'pending').slice(1)}
+                      <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(hub.users?.status || 'pending')}`}>
+                        {(hub.users?.status || 'pending').charAt(0).toUpperCase() + (hub.users?.status || 'pending').slice(1)}
                       </span>
+                      <div className="text-xs text-gray-500 mt-1">Account Status</div>
                     </div>
                     <div className="text-xs text-gray-500">
                       {hub.created_at ? new Date(hub.created_at).toLocaleDateString() : 'N/A'}
@@ -705,49 +1005,319 @@ export default function BusinessHubs() {
                   </td>
                   {/* Actions */}
                   <td className="px-6 py-4">
-                    <div className="space-y-2">
+                    <div className="relative dropdown-container">
+                      {/* Enhanced Three dots button */}
                       <button
-                        onClick={() => handleEdit(hub)}
-                        className="block w-full text-left text-blue-600 hover:text-blue-700 font-medium text-sm"
+                        onClick={(e) => toggleDropdown(hub.id, e)}
+                        className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                        aria-label={`More actions for ${hub.name}`}
+                        title="More actions"
                       >
-                        Edit
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01" />
+                        </svg>
                       </button>
-                      <button
-                        onClick={() => handleViewStationsClick(hub)}
-                        className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm"
-                      >
-                        View Stations
-                      </button>
-                      <button 
-                        onClick={() => handleTopUpClick(hub)}
-                        className="block w-full text-left text-purple-600 hover:text-purple-700 font-medium text-sm"
-                      >
-                        Top-up
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAuditEntityId(hub.id);
-                          setAuditEntityName(hub.name);
-                          setShowAuditModal(true);
-                        }}
-                        className="block w-full text-left text-gray-600 hover:text-gray-700 font-medium text-sm"
-                      >
-                        View History
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteClick(hub)}
-                        className="block w-full text-left text-red-600 hover:text-red-700 font-medium text-sm"
-                      >
-                        Delete
-                      </button>
+
+                      {/* Dropdown will be rendered via portal */}
+                      {false && (
+                        <div 
+                          className={`absolute right-0 w-56 enhanced-dropdown rounded-xl z-[60] py-2 ${
+                            dropdownPosition[hub.id] === 'up' 
+                              ? 'bottom-12 animate-slide-up' 
+                              : 'top-12 animate-slide-down'
+                          }`}
+                          style={{
+                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                          }}
+                        >
+                          {/* Edit */}
+                          <button
+                            onClick={() => {
+                              handleEdit(hub);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-blue-600 hover:bg-blue-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 mr-3 group-hover:bg-blue-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </div>
+                            <span>Edit Details</span>
+                          </button>
+                          
+                          {/* Change Status */}
+                          <button
+                            onClick={() => {
+                              handleStatusChangeClick(hub);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-orange-600 hover:bg-orange-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-100 mr-3 group-hover:bg-orange-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                            <span>Change Status</span>
+                          </button>
+                          
+                          {/* View Stations */}
+                          <button
+                            onClick={() => {
+                              handleViewStationsClick(hub);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-green-600 hover:bg-green-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-100 mr-3 group-hover:bg-green-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              </svg>
+                            </div>
+                            <span>View Stations</span>
+                          </button>
+                          
+                          {/* Top-up */}
+                          <button
+                            onClick={() => {
+                              handleTopUpClick(hub);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-purple-600 hover:bg-purple-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 mr-3 group-hover:bg-purple-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                              </svg>
+                            </div>
+                            <span>Add Balance</span>
+                          </button>
+                          
+                          {/* View History */}
+                          <button
+                            onClick={() => {
+                              setAuditEntityId(hub.id);
+                              setAuditEntityName(hub.name);
+                              setShowAuditModal(true);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 mr-3 group-hover:bg-gray-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                            <span>View History</span>
+                          </button>
+                          
+                          {/* Separator */}
+                          <div className="h-px bg-gray-200 mx-2 my-2"></div>
+                          
+                          {/* Delete */}
+                          <button
+                            onClick={() => {
+                              handleDeleteClick(hub);
+                              setOpenDropdown(null);
+                            }}
+                            className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 group"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 mr-3 group-hover:bg-red-200 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </div>
+                            <span>Delete Hub</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       </div>
+
+      {/* Portal-based Dropdown Menu */}
+      {openDropdown && dropdownCoords[openDropdown] && selectedHubForDropdown && typeof window !== 'undefined' && createPortal(
+        <div 
+          className={`fixed w-56 enhanced-dropdown rounded-xl z-[9999] py-2 ${
+            dropdownPosition[openDropdown] === 'up' 
+              ? 'animate-slide-up' 
+              : 'animate-slide-down'
+          }`}
+          style={{
+            top: dropdownCoords[openDropdown].top,
+            left: dropdownCoords[openDropdown].left,
+            right: dropdownCoords[openDropdown].right,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}
+          onMouseDown={(e) => {
+            // Prevent the mousedown event from bubbling to document
+            e.stopPropagation();
+          }}
+        >
+          {(() => {
+            const hub = selectedHubForDropdown;
+            if (!hub) {
+              console.error('No selected hub for dropdown');
+              return null;
+            }
+            
+            return (
+              <>
+                {/* Edit */}
+                <button
+                  onClick={() => {
+                    console.log('Edit button clicked for hub:', hub.name, hub.id);
+                    try {
+                      handleEdit(hub);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('Edit handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in edit handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-blue-600 hover:bg-blue-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 mr-3 group-hover:bg-blue-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </div>
+                  <span>Edit Details</span>
+                </button>
+                
+                {/* Change Status */}
+                <button
+                  onClick={() => {
+                    console.log('Status button clicked for hub:', hub.name, hub.id);
+                    try {
+                      handleStatusChangeClick(hub);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('Status change handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in status change handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-orange-600 hover:bg-orange-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-100 mr-3 group-hover:bg-orange-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span>Change Status</span>
+                </button>
+                
+                {/* View Stations */}
+                <button
+                  onClick={() => {
+                    console.log('View Stations button clicked for hub:', hub.name, hub.id);
+                    try {
+                      handleViewStationsClick(hub);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('View stations handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in view stations handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-green-600 hover:bg-green-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-100 mr-3 group-hover:bg-green-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    </svg>
+                  </div>
+                  <span>View Stations</span>
+                </button>
+                
+                {/* Top Up */}
+                <button
+                  onClick={() => {
+                    console.log('Top Up button clicked for hub:', hub.name, hub.id);
+                    try {
+                      handleTopUpClick(hub);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('Top up handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in top up handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-purple-600 hover:bg-purple-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 mr-3 group-hover:bg-purple-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  </div>
+                  <span>Add Balance</span>
+                </button>
+                
+                {/* View History */}
+                <button
+                  onClick={() => {
+                    console.log('View History button clicked for hub:', hub.name, hub.id);
+                    try {
+                      setAuditEntityId(hub.id);
+                      setAuditEntityName(hub.name);
+                      setShowAuditModal(true);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('View history handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in view history handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 mr-3 group-hover:bg-gray-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span>View History</span>
+                </button>
+                
+                {/* Separator */}
+                <div className="h-px bg-gray-200 mx-2 my-2"></div>
+                
+                {/* Delete */}
+                <button
+                  onClick={() => {
+                    console.log('Delete button clicked for hub:', hub.name, hub.id);
+                    try {
+                      handleDeleteClick(hub);
+                      setOpenDropdown(null);
+                      setSelectedHubForDropdown(null);
+                      console.log('Delete handler completed successfully');
+                    } catch (error) {
+                      console.error('Error in delete handler:', error);
+                    }
+                  }}
+                  className="enhanced-dropdown-item flex items-center w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 group"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 mr-3 group-hover:bg-red-200 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </div>
+                  <span>Delete Hub</span>
+                </button>
+              </>
+            );
+          })()}
+        </div>,
+        document.body
+      )}
 
       {/* Create/Edit Modal */}
       {showModal && (
@@ -1324,6 +1894,236 @@ export default function BusinessHubs() {
                   </>
                 ) : (
                   'Confirm Top-up'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Management Modal */}
+      {showStatusModal && selectedHubForStatus && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-orange-50 rounded-xl">
+                  <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Update Account Status</h2>
+                  <p className="text-gray-600 mt-1">Change business hub account status</p>
+                </div>
+              </div>
+              <button 
+                onClick={handleStatusChangeCancel}
+                disabled={statusLoading}
+                className="text-gray-400 hover:text-gray-600 text-2xl hover:bg-gray-100 w-10 h-10 rounded-full flex items-center justify-center transition-colors disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Hub Information */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-6">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Hub Name:</span>
+                  <span className="text-sm font-semibold text-gray-900">{selectedHubForStatus.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">BHCODE:</span>
+                  <span className="text-sm font-mono bg-gray-200 px-2 py-1 rounded text-gray-900">{selectedHubForStatus.bhcode}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Current Status:</span>
+                  <span className={`text-sm font-medium px-3 py-1 rounded-full ${
+                    selectedHubForStatus.users?.status === 'active' ? 'text-green-600 bg-green-100' :
+                    selectedHubForStatus.users?.status === 'inactive' ? 'text-red-600 bg-red-100' :
+                    selectedHubForStatus.users?.status === 'suspended' ? 'text-red-600 bg-red-100' :
+                    'text-yellow-600 bg-yellow-100'
+                  }`}>
+                    {(selectedHubForStatus.users?.status || 'pending').charAt(0).toUpperCase() + (selectedHubForStatus.users?.status || 'pending').slice(1)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Success Message */}
+            {statusSuccess && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-green-600">{statusSuccess}</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {statusError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-red-600">{statusError}</p>
+              </div>
+            )}
+
+            {/* Status Selection Form */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  New Account Status
+                </label>
+                <select
+                  value={newStatus}
+                  onChange={(e) => {
+                    setNewStatus(e.target.value);
+                    setSelectedTemplate('');
+                    setStatusChangeReason('');
+                  }}
+                  disabled={statusLoading}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 text-gray-900 disabled:opacity-50"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+
+              {/* Template Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Reason Template
+                </label>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => handleTemplateSelection(e.target.value)}
+                  disabled={statusLoading}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 text-gray-900 disabled:opacity-50"
+                >
+                  <option value="">Select a template...</option>
+                  {getTemplatesForStatus(newStatus).map((template, index) => (
+                    <option key={index} value={template}>
+                      {template}
+                    </option>
+                  ))}
+                  <option value="custom">Custom reason...</option>
+                </select>
+              </div>
+
+              {/* Notes Action Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Notes Action
+                </label>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="notesAction"
+                      value="append"
+                      checked={notesAction === 'append'}
+                      onChange={(e) => setNotesAction(e.target.value as 'append' | 'replace')}
+                      disabled={statusLoading}
+                      className="mr-2 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-700">Add to existing notes</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="notesAction"
+                      value="replace"
+                      checked={notesAction === 'replace'}
+                      onChange={(e) => setNotesAction(e.target.value as 'append' | 'replace')}
+                      disabled={statusLoading}
+                      className="mr-2 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-700">Replace all notes</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Current Notes Display */}
+              {selectedHubForStatus.admin_notes && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Current Notes
+                  </label>
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 max-h-24 overflow-y-auto">
+                    <pre className="text-xs text-gray-600 whitespace-pre-wrap font-mono">
+                      {selectedHubForStatus.admin_notes}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Notes Input */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Status Change Notes
+                </label>
+                <textarea
+                  value={statusChangeReason}
+                  onChange={(e) => {
+                    setStatusChangeReason(e.target.value);
+                    if (e.target.value && selectedTemplate !== 'custom') {
+                      setSelectedTemplate('custom');
+                    }
+                  }}
+                  placeholder={selectedTemplate === 'custom' || !selectedTemplate ? 
+                    "Add admin notes, approval reason, rejection reason, or any comments..." :
+                    "Template selected. You can modify the text above or add additional notes..."
+                  }
+                  disabled={statusLoading}
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 text-gray-900 placeholder-gray-400 disabled:opacity-50 resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {statusChangeReason.length}/500 characters
+                </p>
+              </div>
+
+              {/* Notes Preview */}
+              {statusChangeReason.trim() && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Final Notes Preview
+                  </label>
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 max-h-32 overflow-y-auto">
+                    <pre className="text-xs text-blue-800 whitespace-pre-wrap font-mono">
+                      {getNotesPreview()}
+                    </pre>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1">
+                    This is how your notes will appear after the status change.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex space-x-4 mt-6">
+              <button
+                onClick={handleStatusChangeCancel}
+                disabled={statusLoading}
+                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStatusChangeSubmit}
+                disabled={statusLoading || !newStatus}
+                className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {statusLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Updating...
+                  </>
+                ) : (
+                  'Update Status'
                 )}
               </button>
             </div>

@@ -14,62 +14,157 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_logs: {
+        Row: {
+          action_type: string
+          admin_email: string
+          admin_id: string | null
+          admin_name: string | null
+          changes_summary: string | null
+          created_at: string
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string
+          id: string
+          ip_address: unknown | null
+          new_values: Json | null
+          old_values: Json | null
+          user_agent: string | null
+        }
+        Insert: {
+          action_type: string
+          admin_email: string
+          admin_id?: string | null
+          admin_name?: string | null
+          changes_summary?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+        }
+        Update: {
+          action_type?: string
+          admin_email?: string
+          admin_id?: string | null
+          admin_name?: string | null
+          changes_summary?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_audit_logs_admin_id_fkey"
+            columns: ["admin_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       business_hubs: {
         Row: {
           bhcode: string
           commission_rate: number | null
           created_at: string | null
+          created_by: string | null
           current_balance: number | null
           id: string
           initial_balance: number | null
+          last_modified_by: string | null
           manager_name: string | null
           municipality: string
           name: string
+          notes: string | null
           province: string
           status: string | null
+          status_changed_by: string | null
           territory_boundaries: Json | null
           territory_name: string | null
           total_revenue: number | null
           updated_at: string | null
           user_id: string
+          uses_system_commission_rate: boolean | null
         }
         Insert: {
           bhcode: string
           commission_rate?: number | null
           created_at?: string | null
+          created_by?: string | null
           current_balance?: number | null
           id?: string
           initial_balance?: number | null
+          last_modified_by?: string | null
           manager_name?: string | null
           municipality: string
           name: string
+          notes?: string | null
           province: string
           status?: string | null
+          status_changed_by?: string | null
           territory_boundaries?: Json | null
           territory_name?: string | null
           total_revenue?: number | null
           updated_at?: string | null
           user_id: string
+          uses_system_commission_rate?: boolean | null
         }
         Update: {
           bhcode?: string
           commission_rate?: number | null
           created_at?: string | null
+          created_by?: string | null
           current_balance?: number | null
           id?: string
           initial_balance?: number | null
+          last_modified_by?: string | null
           manager_name?: string | null
           municipality?: string
           name?: string
+          notes?: string | null
           province?: string
           status?: string | null
+          status_changed_by?: string | null
           territory_boundaries?: Json | null
           territory_name?: string | null
           total_revenue?: number | null
           updated_at?: string | null
           user_id?: string
+          uses_system_commission_rate?: boolean | null
         }
         Relationships: [
+          {
+            foreignKeyName: "business_hubs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_hubs_last_modified_by_fkey"
+            columns: ["last_modified_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_hubs_status_changed_by_fkey"
+            columns: ["status_changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "business_hubs_user_id_fkey"
             columns: ["user_id"]
@@ -147,6 +242,47 @@ export type Database = {
           },
         ]
       }
+      dividend_distributions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          paid_at: string | null
+          period_end: string
+          period_start: string
+          shareholder_id: string | null
+          status: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          paid_at?: string | null
+          period_end: string
+          period_start: string
+          shareholder_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          paid_at?: string | null
+          period_end?: string
+          period_start?: string
+          shareholder_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dividend_distributions_shareholder_id_fkey"
+            columns: ["shareholder_id"]
+            isOneToOne: false
+            referencedRelation: "shareholders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       loading_stations: {
         Row: {
           address: string
@@ -154,14 +290,17 @@ export type Database = {
           business_hub_id: string
           commission_rate: number | null
           created_at: string | null
+          created_by: string | null
           current_balance: number | null
           id: string
+          last_modified_by: string | null
           lscode: string
           name: string
           status: string | null
           total_revenue: number | null
           updated_at: string | null
           user_id: string
+          uses_system_commission_rate: boolean | null
         }
         Insert: {
           address: string
@@ -169,14 +308,17 @@ export type Database = {
           business_hub_id: string
           commission_rate?: number | null
           created_at?: string | null
+          created_by?: string | null
           current_balance?: number | null
           id?: string
+          last_modified_by?: string | null
           lscode: string
           name: string
           status?: string | null
           total_revenue?: number | null
           updated_at?: string | null
           user_id: string
+          uses_system_commission_rate?: boolean | null
         }
         Update: {
           address?: string
@@ -184,14 +326,17 @@ export type Database = {
           business_hub_id?: string
           commission_rate?: number | null
           created_at?: string | null
+          created_by?: string | null
           current_balance?: number | null
           id?: string
+          last_modified_by?: string | null
           lscode?: string
           name?: string
           status?: string | null
           total_revenue?: number | null
           updated_at?: string | null
           user_id?: string
+          uses_system_commission_rate?: boolean | null
         }
         Relationships: [
           {
@@ -199,6 +344,20 @@ export type Database = {
             columns: ["business_hub_id"]
             isOneToOne: false
             referencedRelation: "business_hubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loading_stations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loading_stations_last_modified_by_fkey"
+            columns: ["last_modified_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -213,13 +372,26 @@ export type Database = {
       merchants: {
         Row: {
           address: string
+          approved_at: string | null
+          approved_by: string | null
+          average_rating: number | null
+          bir_permit: string | null
+          business_description: string | null
+          business_logo: string | null
           business_name: string
           business_permit: string | null
           business_type: string
           commission_rate: number | null
+          coordinates: Json | null
           created_at: string | null
+          delivery_radius: number | null
           dti_permit: string | null
+          food_license: string | null
           id: string
+          minimum_order: number | null
+          operating_hours: Json | null
+          rating_count: number | null
+          rejection_reason: string | null
           status: string | null
           total_orders: number | null
           total_revenue: number | null
@@ -228,13 +400,26 @@ export type Database = {
         }
         Insert: {
           address: string
+          approved_at?: string | null
+          approved_by?: string | null
+          average_rating?: number | null
+          bir_permit?: string | null
+          business_description?: string | null
+          business_logo?: string | null
           business_name: string
           business_permit?: string | null
           business_type: string
           commission_rate?: number | null
+          coordinates?: Json | null
           created_at?: string | null
+          delivery_radius?: number | null
           dti_permit?: string | null
+          food_license?: string | null
           id?: string
+          minimum_order?: number | null
+          operating_hours?: Json | null
+          rating_count?: number | null
+          rejection_reason?: string | null
           status?: string | null
           total_orders?: number | null
           total_revenue?: number | null
@@ -243,13 +428,26 @@ export type Database = {
         }
         Update: {
           address?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          average_rating?: number | null
+          bir_permit?: string | null
+          business_description?: string | null
+          business_logo?: string | null
           business_name?: string
           business_permit?: string | null
           business_type?: string
           commission_rate?: number | null
+          coordinates?: Json | null
           created_at?: string | null
+          delivery_radius?: number | null
           dti_permit?: string | null
+          food_license?: string | null
           id?: string
+          minimum_order?: number | null
+          operating_hours?: Json | null
+          rating_count?: number | null
+          rejection_reason?: string | null
           status?: string | null
           total_orders?: number | null
           total_revenue?: number | null
@@ -352,47 +550,98 @@ export type Database = {
       }
       riders: {
         Row: {
+          address: string | null
+          approved_at: string | null
+          approved_by: string | null
+          average_rating: number | null
+          cancelled_deliveries: number | null
           commission_rate: number | null
+          completed_deliveries: number | null
           created_at: string | null
           current_balance: number | null
+          current_location: Json | null
+          documents: Json | null
+          emergency_contact: Json | null
           id: string
+          is_available: boolean | null
+          is_online: boolean | null
           loading_station_id: string
+          profile_photo: string | null
+          rating_count: number | null
           rcode: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           status: string | null
           total_deliveries: number | null
           total_earnings: number | null
           updated_at: string | null
           user_id: string
+          vehicle_details: Json | null
           vehicle_plate: string | null
           vehicle_type: string
         }
         Insert: {
+          address?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          average_rating?: number | null
+          cancelled_deliveries?: number | null
           commission_rate?: number | null
+          completed_deliveries?: number | null
           created_at?: string | null
           current_balance?: number | null
+          current_location?: Json | null
+          documents?: Json | null
+          emergency_contact?: Json | null
           id?: string
+          is_available?: boolean | null
+          is_online?: boolean | null
           loading_station_id: string
+          profile_photo?: string | null
+          rating_count?: number | null
           rcode: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           status?: string | null
           total_deliveries?: number | null
           total_earnings?: number | null
           updated_at?: string | null
           user_id: string
+          vehicle_details?: Json | null
           vehicle_plate?: string | null
           vehicle_type: string
         }
         Update: {
+          address?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          average_rating?: number | null
+          cancelled_deliveries?: number | null
           commission_rate?: number | null
+          completed_deliveries?: number | null
           created_at?: string | null
           current_balance?: number | null
+          current_location?: Json | null
+          documents?: Json | null
+          emergency_contact?: Json | null
           id?: string
+          is_available?: boolean | null
+          is_online?: boolean | null
           loading_station_id?: string
+          profile_photo?: string | null
+          rating_count?: number | null
           rcode?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           status?: string | null
           total_deliveries?: number | null
           total_earnings?: number | null
           updated_at?: string | null
           user_id?: string
+          vehicle_details?: Json | null
           vehicle_plate?: string | null
           vehicle_type?: string
         }
@@ -413,8 +662,56 @@ export type Database = {
           },
         ]
       }
+      shareholders: {
+        Row: {
+          created_at: string | null
+          id: string
+          initial_investment: number | null
+          last_dividend_date: string | null
+          ownership_percentage: number
+          pending_dividends: number | null
+          status: string | null
+          total_dividends: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          initial_investment?: number | null
+          last_dividend_date?: string | null
+          ownership_percentage: number
+          pending_dividends?: number | null
+          status?: string | null
+          total_dividends?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          initial_investment?: number | null
+          last_dividend_date?: string | null
+          ownership_percentage?: number
+          pending_dividends?: number | null
+          status?: string | null
+          total_dividends?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shareholders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_config: {
         Row: {
+          affects_existing_entities: boolean | null
           config_key: string
           config_type: string
           config_value: Json
@@ -425,6 +722,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          affects_existing_entities?: boolean | null
           config_key: string
           config_type: string
           config_value: Json
@@ -435,6 +733,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          affects_existing_entities?: boolean | null
           config_key?: string
           config_type?: string
           config_value?: Json
@@ -538,30 +837,45 @@ export type Database = {
           created_at: string | null
           current_balance: number | null
           email: string
+          email_verified_at: string | null
           full_name: string
           id: string
           phone_number: string | null
+          phone_verified_at: string | null
+          profile_image_url: string | null
           role: string
+          role_data: Json | null
+          status: string | null
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           current_balance?: number | null
           email: string
+          email_verified_at?: string | null
           full_name: string
           id?: string
           phone_number?: string | null
+          phone_verified_at?: string | null
+          profile_image_url?: string | null
           role: string
+          role_data?: Json | null
+          status?: string | null
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           current_balance?: number | null
           email?: string
+          email_verified_at?: string | null
           full_name?: string
           id?: string
           phone_number?: string | null
+          phone_verified_at?: string | null
+          profile_image_url?: string | null
           role?: string
+          role_data?: Json | null
+          status?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -715,6 +1029,22 @@ export type Database = {
       get_bonus_percentage: {
         Args: { requester_type: string }
         Returns: number
+      }
+      log_admin_action: {
+        Args: {
+          p_action_type: string
+          p_changes_summary?: string
+          p_entity_id: string
+          p_entity_name: string
+          p_entity_type: string
+          p_new_values?: Json
+          p_old_values?: Json
+        }
+        Returns: string
+      }
+      propagate_commission_rates: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
       request_topup: {
         Args: {

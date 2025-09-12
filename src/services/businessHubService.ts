@@ -77,7 +77,8 @@ export const businessHubService = {
           users!business_hubs_user_id_fkey (
             email,
             phone_number,
-            full_name
+            full_name,
+            status
           )
         `)
         .order('created_at', { ascending: false })
@@ -125,8 +126,16 @@ export const businessHubService = {
     const supabase = createClient()
     const { data, error } = await supabase
       .from('business_hubs')
-      .select('*')
-      .eq('status', status)
+      .select(`
+        *,
+        users!business_hubs_user_id_fkey (
+          email,
+          phone_number,
+          full_name,
+          status
+        )
+      `)
+      .eq('users.status', status)
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -231,6 +240,103 @@ export const businessHubService = {
     }
   },
 
+  async updateBusinessHubStatus(id: string, statusUpdate: {
+    status: string;
+    notes?: string;
+  }) {
+    const supabase = createClient()
+    
+    try {
+      // Get current user for audit logging
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        throw new Error('Authentication required for status updates')
+      }
+
+      // Get the business hub to get the user_id
+      const { data: currentHub, error: fetchError } = await supabase
+        .from('business_hubs')
+        .select('user_id')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch business hub: ${fetchError.message}`)
+      }
+
+      if (!currentHub.user_id) {
+        throw new Error('Business hub has no associated user')
+      }
+
+      console.log(`[businessHubService] Updating user status for business hub ${id}:`, {
+        hubId: id,
+        userId: currentHub.user_id,
+        newUserStatus: statusUpdate.status,
+        notes: statusUpdate.notes,
+        updatedBy: user.email
+      })
+
+      // Update only the user status (single source of truth)
+      const { error: userUpdateError } = await supabase
+        .from('users')
+        .update({
+          status: statusUpdate.status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', currentHub.user_id)
+
+      if (userUpdateError) {
+        console.error('[businessHubService] Failed to update user status:', userUpdateError)
+        throw new Error(`Failed to update account status: ${userUpdateError.message}`)
+      }
+
+      // Optional: Update business hub admin notes if provided
+      if (statusUpdate.notes) {
+        const { error: hubNotesError } = await supabase
+          .from('business_hubs')
+          .update({
+            admin_notes: statusUpdate.notes,
+            last_modified_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id)
+
+        if (hubNotesError) {
+          console.warn('[businessHubService] Failed to update hub admin notes (non-critical):', hubNotesError)
+        }
+      }
+
+      // Fetch the updated data with user status
+      const { data: updatedHub, error: refetchError } = await supabase
+        .from('business_hubs')
+        .select(`
+          *,
+          users!business_hubs_user_id_fkey (
+            email,
+            phone_number,
+            full_name,
+            status
+          )
+        `)
+        .eq('id', id)
+        .single()
+
+      if (refetchError) throw refetchError
+
+      console.log(`[businessHubService] Account status updated successfully for hub ${id}:`, {
+        userStatus: updatedHub.users?.status,
+        notes: statusUpdate.notes,
+        updatedBy: user.email,
+        timestamp: new Date().toISOString()
+      })
+
+      return updatedHub
+    } catch (error) {
+      console.error('[businessHubService] Status update failed:', error)
+      throw error
+    }
+  },
+
   async deleteBusinessHub(id: string) {
     const supabase = createClient()
     const adminSupabase = createAdminClient()
@@ -314,19 +420,24 @@ export const businessHubService = {
     
     const { data: hubs, error: hubsError } = await supabase
       .from('business_hubs')
-      .select('status, total_revenue')
+      .select(`
+        total_revenue,
+        users!business_hubs_user_id_fkey (
+          status
+        )
+      `)
 
     if (hubsError) throw hubsError
 
     const totalHubs = hubs?.length || 0
-    const activeHubs = hubs?.filter(h => h.status === 'active').length || 0
+    const activeHubs = hubs?.filter(h => h.users?.status === 'active').length || 0
     const totalRevenue = hubs?.reduce((sum, h) => sum + (h.total_revenue || 0), 0) || 0
 
     return {
       totalHubs,
       activeHubs,
       totalRevenue,
-      pendingHubs: hubs?.filter(h => h.status === 'pending').length || 0
+      pendingHubs: hubs?.filter(h => h.users?.status === 'pending').length || 0
     }
   },
 
