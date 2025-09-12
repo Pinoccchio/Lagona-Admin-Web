@@ -73,6 +73,13 @@ export default function BusinessHubs() {
   // System config for dynamic bonus rates
   const [businessHubBonusRate, setBusinessHubBonusRate] = useState<number>(50); // Default fallback
 
+  // View Stations modal states
+  const [showViewStationsModal, setShowViewStationsModal] = useState(false);
+  const [selectedHubForStations, setSelectedHubForStations] = useState<BusinessHub | null>(null);
+  const [loadingStationsData, setLoadingStationsData] = useState<any[]>([]);
+  const [stationsLoading, setStationsLoading] = useState(false);
+  const [stationsError, setStationsError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchBusinessHubs();
     fetchStatistics();
@@ -194,7 +201,41 @@ export default function BusinessHubs() {
     setShowModal(true);
   };
 
+  // Philippine phone number auto-formatting function
+  const formatPhoneNumber = (input: string): string => {
+    // Remove all non-digit characters
+    const numbers = input.replace(/\D/g, '');
+    
+    // Handle different Philippine number formats and convert to +639XXXXXXXXX
+    if (numbers.length >= 10) {
+      // Handle 09XXXXXXXXX format (11 digits)
+      if (numbers.startsWith('09') && numbers.length === 11) {
+        return '+63' + numbers.slice(1); // Remove 0, add +63
+      }
+      // Handle 9XXXXXXXXX format (10 digits)
+      else if (numbers.startsWith('9') && numbers.length === 10) {
+        return '+63' + numbers; // Add +63 prefix
+      }
+      // Handle 639XXXXXXXXX format (12 digits)
+      else if (numbers.startsWith('639') && numbers.length === 12) {
+        return '+' + numbers; // Add + prefix
+      }
+      // Handle +639XXXXXXXXX format (already correct, but clean up)
+      else if (numbers.startsWith('639') && numbers.length === 12) {
+        return '+' + numbers;
+      }
+    }
+    
+    // For incomplete numbers or other formats, return the cleaned input
+    return input.startsWith('+63') ? input : (numbers.startsWith('639') ? '+' + numbers : (numbers.length > 0 ? '+63' + numbers : ''));
+  };
+
   const handleInputChange = (field: keyof FormData, value: string) => {
+    // Auto-format phone number for Philippine format
+    if (field === 'phone_number') {
+      value = formatPhoneNumber(value);
+    }
+    
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -208,12 +249,25 @@ export default function BusinessHubs() {
     if (!formData.province.trim()) return 'Province is required';
     if (!formData.manager_name.trim()) return 'Manager name is required';
     
-    // Phone number validation (optional but check format if provided)
-    if (formData.phone_number.trim()) {
-      const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-      if (!phoneRegex.test(formData.phone_number.replace(/\s|-|\(|\)/g, ''))) {
-        return 'Please enter a valid phone number (e.g., +63 912 345 6789)';
-      }
+    // Phone number validation (required) - Philippine format
+    if (!formData.phone_number.trim()) return 'Phone number is required';
+    
+    // Remove all non-digit characters except +
+    const cleanNumber = formData.phone_number.replace(/[^\d+]/g, '');
+    
+    // Philippine mobile number validation (matching Flutter validators)
+    const isValidPhilippineNumber = 
+      // Format 1: +639XXXXXXXXX (13 characters with +)
+      (cleanNumber.startsWith('+639') && cleanNumber.length === 13 && cleanNumber.charAt(3) === '9') ||
+      // Format 2: 639XXXXXXXXX (12 characters without +)  
+      (cleanNumber.startsWith('639') && cleanNumber.length === 12 && cleanNumber.charAt(2) === '9') ||
+      // Format 3: 09XXXXXXXXX (11 characters local format)
+      (cleanNumber.startsWith('09') && cleanNumber.length === 11 && cleanNumber.charAt(1) === '9') ||
+      // Format 4: 9XXXXXXXXX (10 characters without prefix)
+      (cleanNumber.startsWith('9') && cleanNumber.length === 10);
+    
+    if (!isValidPhilippineNumber) {
+      return 'Please enter a valid Philippine phone number (e.g., +639123456789, 09123456789)';
     }
     
     // Auth fields validation (only for new hubs)
@@ -427,6 +481,32 @@ export default function BusinessHubs() {
     setTopUpSuccess(null);
   };
 
+  const handleViewStationsClick = async (hub: BusinessHub) => {
+    setSelectedHubForStations(hub);
+    setStationsError(null);
+    setLoadingStationsData([]);
+    setShowViewStationsModal(true);
+    
+    try {
+      setStationsLoading(true);
+      const stations = await loadingStationService.getLoadingStationsByBusinessHub(hub.id);
+      setLoadingStationsData(stations || []);
+    } catch (err: any) {
+      console.error('Error fetching loading stations:', err);
+      setStationsError(err.message || 'Failed to load loading stations');
+    } finally {
+      setStationsLoading(false);
+    }
+  };
+
+  const handleViewStationsClose = () => {
+    setShowViewStationsModal(false);
+    setSelectedHubForStations(null);
+    setLoadingStationsData([]);
+    setStationsError(null);
+    setStationsLoading(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Success Message */}
@@ -632,7 +712,10 @@ export default function BusinessHubs() {
                       >
                         Edit
                       </button>
-                      <button className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm">
+                      <button
+                        onClick={() => handleViewStationsClick(hub)}
+                        className="block w-full text-left text-green-600 hover:text-green-700 font-medium text-sm"
+                      >
                         View Stations
                       </button>
                       <button 
@@ -793,17 +876,17 @@ export default function BusinessHubs() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-deep-black mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-deep-black mb-2">Phone Number *</label>
                 <input
                   type="tel"
                   value={formData.phone_number}
                   onChange={(e) => handleInputChange('phone_number', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-orange focus:border-transparent"
-                  placeholder="e.g., +63 912 345 6789"
+                  placeholder="e.g., 09123456789 → auto-formats to +639123456789"
                   disabled={formLoading}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Optional. Include country code for international numbers
+                  Philippine numbers auto-format (09XXXXXXXXX → +639XXXXXXXXX)
                 </p>
               </div>
 
@@ -1244,6 +1327,189 @@ export default function BusinessHubs() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Stations Modal */}
+      {showViewStationsModal && selectedHubForStations && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-6xl w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-green-50 rounded-xl">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Loading Stations</h2>
+                  <p className="text-gray-600 mt-1">
+                    {selectedHubForStations.name} • {loadingStationsData.length} station{loadingStationsData.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={handleViewStationsClose}
+                className="text-gray-400 hover:text-gray-600 text-2xl hover:bg-gray-100 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Business Hub Information */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-600">BHCODE:</span>
+                  <div className="font-mono bg-gray-200 px-2 py-1 rounded text-gray-900 mt-1">{selectedHubForStations.bhcode}</div>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Location:</span>
+                  <div className="text-gray-900 mt-1">{selectedHubForStations.municipality}, {selectedHubForStations.province}</div>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Manager:</span>
+                  <div className="text-gray-900 mt-1">{selectedHubForStations.manager_name || 'N/A'}</div>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Territory:</span>
+                  <div className="text-gray-900 mt-1">{selectedHubForStations.territory_name || selectedHubForStations.municipality}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Loading State */}
+            {stationsLoading && (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex items-center space-x-3">
+                  <svg className="animate-spin h-6 w-6 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-gray-600">Loading stations...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {stationsError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <div className="flex items-center space-x-3">
+                  <svg className="w-5 h-5 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <p className="text-red-600">{stationsError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Stations Table */}
+            {!stationsLoading && !stationsError && (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                {loadingStationsData.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="p-3 bg-gray-50 rounded-xl inline-block mb-4">
+                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No Loading Stations Found</h3>
+                    <p className="text-gray-500">This business hub doesn't have any loading stations yet.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Station Details</th>
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Location & Manager</th>
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Financial Info</th>
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {loadingStationsData.map((station) => (
+                          <tr key={station.id} className="hover:bg-gray-50">
+                            {/* Station Details */}
+                            <td className="px-6 py-4">
+                              <div>
+                                <div className="font-semibold text-gray-900">{station.name}</div>
+                                <div className="text-sm text-gray-600">
+                                  LSCODE: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{station.lscode}</span>
+                                </div>
+                                <div className="text-sm text-gray-500 mt-1">Commission: {station.commission_rate}%</div>
+                              </div>
+                            </td>
+                            
+                            {/* Location & Manager */}
+                            <td className="px-6 py-4">
+                              <div>
+                                <div className="font-medium text-gray-900">{station.area}</div>
+                                <div className="text-sm text-gray-600">{station.address}</div>
+                                <div className="mt-2">
+                                  <div className="font-medium text-gray-900">{station.users?.full_name || 'N/A'}</div>
+                                  {station.users?.phone_number && (
+                                    <div className="text-sm text-gray-600 flex items-center mt-1">
+                                      <svg className="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                      </svg>
+                                      {station.users.phone_number}
+                                    </div>
+                                  )}
+                                  {station.users?.email && (
+                                    <div className="text-sm text-gray-600 flex items-center mt-1">
+                                      <svg className="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                      </svg>
+                                      {station.users.email}
+                                    </div>
+                                  )}
+                                  {!station.users?.phone_number && !station.users?.email && (
+                                    <div className="text-sm text-gray-400">No contact info</div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            
+                            {/* Financial Info */}
+                            <td className="px-6 py-4">
+                              <div>
+                                <div className="text-lg font-semibold text-blue-600">
+                                  ₱{(station.current_balance || 0).toLocaleString()}
+                                </div>
+                                <div className="text-sm text-gray-500">current balance</div>
+                                <div className="text-sm font-medium text-green-600 mt-1">
+                                  ₱{((station.total_revenue || 0) / 1000).toFixed(1)}K revenue
+                                </div>
+                              </div>
+                            </td>
+                            
+                            {/* Status */}
+                            <td className="px-6 py-4">
+                              <div>
+                                <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
+                                  station.status === 'active' ? 'text-green-600 bg-green-100' :
+                                  station.status === 'inactive' ? 'text-red-600 bg-red-100' :
+                                  'text-yellow-600 bg-yellow-100'
+                                }`}>
+                                  {(station.status || 'pending').charAt(0).toUpperCase() + (station.status || 'pending').slice(1)}
+                                </span>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {station.created_at ? new Date(station.created_at).toLocaleDateString() : 'N/A'}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

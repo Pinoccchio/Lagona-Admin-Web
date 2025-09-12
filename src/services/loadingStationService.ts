@@ -114,7 +114,14 @@ export const loadingStationService = {
       
       const { data, error } = await supabase
         .from('loading_stations')
-        .select('*')
+        .select(`
+          *,
+          users!loading_stations_user_id_fkey (
+            email,
+            phone_number,
+            full_name
+          )
+        `)
         .eq('business_hub_id', businessHubId)
         .order('created_at', { ascending: false })
 
