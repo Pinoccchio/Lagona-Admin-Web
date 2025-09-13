@@ -75,11 +75,15 @@ export type Database = {
       }
       business_hubs: {
         Row: {
+          barangay: string | null
           bhcode: string
           commission_rate: number | null
+          coordinates: Json | null
           created_at: string | null
           created_by: string | null
           current_balance: number | null
+          district: string | null
+          hierarchical_address: string | null
           id: string
           initial_balance: number | null
           last_modified_by: string | null
@@ -88,6 +92,7 @@ export type Database = {
           name: string
           notes: string | null
           province: string
+          region: string | null
           status: string | null
           status_changed_by: string | null
           territory_boundaries: Json | null
@@ -96,13 +101,18 @@ export type Database = {
           updated_at: string | null
           user_id: string
           uses_system_commission_rate: boolean | null
+          zone: string | null
         }
         Insert: {
+          barangay?: string | null
           bhcode: string
           commission_rate?: number | null
+          coordinates?: Json | null
           created_at?: string | null
           created_by?: string | null
           current_balance?: number | null
+          district?: string | null
+          hierarchical_address?: string | null
           id?: string
           initial_balance?: number | null
           last_modified_by?: string | null
@@ -111,6 +121,7 @@ export type Database = {
           name: string
           notes?: string | null
           province: string
+          region?: string | null
           status?: string | null
           status_changed_by?: string | null
           territory_boundaries?: Json | null
@@ -119,13 +130,18 @@ export type Database = {
           updated_at?: string | null
           user_id: string
           uses_system_commission_rate?: boolean | null
+          zone?: string | null
         }
         Update: {
+          barangay?: string | null
           bhcode?: string
           commission_rate?: number | null
+          coordinates?: Json | null
           created_at?: string | null
           created_by?: string | null
           current_balance?: number | null
+          district?: string | null
+          hierarchical_address?: string | null
           id?: string
           initial_balance?: number | null
           last_modified_by?: string | null
@@ -134,6 +150,7 @@ export type Database = {
           name?: string
           notes?: string | null
           province?: string
+          region?: string | null
           status?: string | null
           status_changed_by?: string | null
           territory_boundaries?: Json | null
@@ -142,6 +159,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
           uses_system_commission_rate?: boolean | null
+          zone?: string | null
         }
         Relationships: [
           {

@@ -6,6 +6,8 @@ import { businessHubService } from '@/services/businessHubService';
 import { loadingStationService } from '@/services/loadingStationService';
 import { systemConfigService } from '@/services/systemConfigService';
 import AuditHistory from './AuditHistory';
+import MapModal from './MapModal';
+import LocationDetailsModal from './LocationDetailsModal';
 import type { Database } from '@/lib/supabase/types';
 
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row'] & {
@@ -41,6 +43,11 @@ export default function BusinessHubs() {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditEntityId, setAuditEntityId] = useState<string | null>(null);
   const [auditEntityName, setAuditEntityName] = useState<string | null>(null);
+
+  // Location modal states
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedHubForLocation, setSelectedHubForLocation] = useState<BusinessHub | null>(null);
   
   // State for dropdown actions menu
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -906,6 +913,7 @@ export default function BusinessHubs() {
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Hub Details</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Manager Info</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Location</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Territory</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Stations & Revenue</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Balance Info</th>
@@ -916,7 +924,7 @@ export default function BusinessHubs() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     Loading business hubs...
                   </td>
                 </tr>
@@ -928,7 +936,7 @@ export default function BusinessHubs() {
                 </tr>
               ) : displayHubs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     No business hubs found
                   </td>
                 </tr>
@@ -970,6 +978,53 @@ export default function BusinessHubs() {
                       )}
                     </div>
                   </td>
+
+                  {/* Location */}
+                  <td className="px-6 py-4">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {hub.municipality}, {hub.province}
+                      </div>
+                      {hub.region && (
+                        <div className="text-xs text-gray-500">{hub.region}</div>
+                      )}
+                      {hub.hierarchical_address && (
+                        <div className="text-xs text-gray-400 truncate max-w-32" title={hub.hierarchical_address}>
+                          {hub.hierarchical_address}
+                        </div>
+                      )}
+                      <div className="flex gap-1 mt-2">
+                        {(hub.coordinates || hub.territory_boundaries) && (
+                          <button
+                            onClick={() => {
+                              setSelectedHubForLocation(hub);
+                              setShowMapModal(true);
+                            }}
+                            className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 transition-colors"
+                          >
+                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Map
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSelectedHubForLocation(hub);
+                            setShowLocationModal(true);
+                          }}
+                          className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 transition-colors"
+                        >
+                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+
                   {/* Territory */}
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">{hub.territory_name || hub.municipality}</div>
@@ -2313,6 +2368,25 @@ export default function BusinessHubs() {
           </div>
         </div>
       )}
+
+      {/* Location Modals */}
+      <MapModal
+        businessHub={selectedHubForLocation}
+        isOpen={showMapModal}
+        onClose={() => {
+          setShowMapModal(false);
+          setSelectedHubForLocation(null);
+        }}
+      />
+
+      <LocationDetailsModal
+        businessHub={selectedHubForLocation}
+        isOpen={showLocationModal}
+        onClose={() => {
+          setShowLocationModal(false);
+          setSelectedHubForLocation(null);
+        }}
+      />
     </div>
   );
 }
