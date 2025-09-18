@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { systemConfigService } from './systemConfigService'
+import type { LocationData, TerritoryBounds, BusinessHubFormData, LOCATION_CONSTANTS } from '@/types/location'
 
 // Debug helper function
 async function debugAuthState(supabase: any) {
@@ -24,6 +25,104 @@ async function debugAuthState(supabase: any) {
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row']
 type BusinessHubInsert = Database['public']['Tables']['business_hubs']['Insert']
 type BusinessHubUpdate = Database['public']['Tables']['business_hubs']['Update']
+
+// Location utility functions
+const locationUtils = {
+  // Calculate distance between two coordinates using Haversine formula
+  calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const earthRadius = 6371; // Earth's radius in kilometers
+    const dLat = this.degreesToRadians(lat2 - lat1);
+    const dLng = this.degreesToRadians(lng2 - lng1);
+
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.degreesToRadians(lat1)) *
+      Math.cos(this.degreesToRadians(lat2)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+  },
+
+  degreesToRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
+  },
+
+  // Validate Plus Code format
+  validatePlusCode(plusCode: string): boolean {
+    const cleanCode = plusCode.toUpperCase().replaceAll(' ', '');
+    return /^[23456789CFGHJMPQRVWX]{8}\+[23456789CFGHJMPQRVWX]{2,3}$/.test(cleanCode);
+  },
+
+  // Generate Plus Code from coordinates (simplified)
+  generatePlusCode(lat: number, lng: number, locality: string): string {
+    // Simplified version - in production, use official Plus Codes library
+    const latStr = lat.toFixed(4).replace('.', '').substring(0, 4);
+    const lngStr = lng.toFixed(4).replace('.', '').substring(0, 4);
+    return `${latStr.substring(0, 4)}+${lngStr.substring(0, 3)} ${locality}`;
+  },
+
+  // Consolidate location data from various sources
+  consolidateLocationData(params: {
+    lat: number;
+    lng: number;
+    formattedAddress: string;
+    plusCode?: string;
+    accuracyMeters?: number;
+    administrative: LocationData['administrative'];
+    territoryRadiusKm?: number;
+    source?: 'user_selection' | 'geocoded' | 'gps';
+    validationStatus?: 'pending' | 'valid' | 'invalid' | 'needs_review';
+  }): LocationData {
+    const generatedPlusCode = params.plusCode || this.generatePlusCode(
+      params.lat,
+      params.lng,
+      params.administrative.municipality || ''
+    );
+
+    return {
+      display: params.formattedAddress,
+      plus_code: generatedPlusCode,
+      coordinates: { lat: params.lat, lng: params.lng },
+      accuracy_meters: params.accuracyMeters || 10.0,
+      source: params.source || 'geocoded',
+      validation_status: params.validationStatus || 'pending',
+      administrative: params.administrative,
+      territory: {
+        radius_km: params.territoryRadiusKm || 15.0,
+        is_within_bounds: true,
+        distance_from_center: 0.0,
+        boundaries: {},
+        selected_at: new Date().toISOString(),
+      },
+    };
+  },
+
+  // Check if coordinates are within territory bounds
+  isWithinTerritoryBounds(lat: number, lng: number, businessHubLocation: LocationData): boolean {
+    if (!businessHubLocation.territory.radius_km || businessHubLocation.territory.radius_km <= 0) {
+      return false;
+    }
+
+    const distance = this.calculateDistance(
+      lat,
+      lng,
+      businessHubLocation.coordinates.lat,
+      businessHubLocation.coordinates.lng
+    );
+
+    return distance <= businessHubLocation.territory.radius_km;
+  },
+
+  // Generate territory name from administrative data
+  generateTerritoryName(administrative: LocationData['administrative']): string {
+    const parts = [];
+    if (administrative.barangay) parts.push(administrative.barangay);
+    if (administrative.district) parts.push(administrative.district);
+    if (administrative.municipality) parts.push(administrative.municipality);
+
+    return parts.length > 0 ? parts.join(', ') : 'Territory';
+  }
+};
 
 export const businessHubService = {
   async getAllBusinessHubs() {
@@ -441,6 +540,203 @@ export const businessHubService = {
     }
   },
 
+  // Update business hub with location data
+  async updateBusinessHubLocation(id: string, locationData: LocationData) {
+    const supabase = createClient();
+
+    try {
+      const { data, error } = await supabase
+        .from('business_hubs')
+        .update({
+          location: locationData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to update location data: ${error}`);
+    }
+  },
+
+  // Create business hub with enhanced location data
+  async createBusinessHubWithLocationData(formData: BusinessHubFormData) {
+    const supabase = createClient();
+    const adminSupabase = createAdminClient();
+
+    try {
+      // Step 1: Get commission rates
+      const commissionRates = await systemConfigService.getCommissionRates();
+
+      // Step 2: Create auth user
+      if (!formData.email || !formData.password) {
+        throw new Error('Email and password are required');
+      }
+
+      const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+        email: formData.email,
+        password: formData.password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: formData.manager_name,
+          role: 'business_hub'
+        }
+      });
+
+      if (authError) {
+        if (authError.message.includes('User already registered')) {
+          throw new Error(`A user with email ${formData.email} already exists.`);
+        }
+        throw new Error(`Failed to create auth account: ${authError.message}`);
+      }
+
+      if (!authData.user) {
+        throw new Error('Auth account creation failed');
+      }
+
+      const authUserId = authData.user.id;
+
+      try {
+        // Step 3: Generate BHCODE
+        const { data: bhcodeData, error: bhcodeError } = await supabase.rpc('generate_bhcode', {
+          municipality_name: formData.municipality
+        });
+
+        if (bhcodeError) throw bhcodeError;
+        const bhcode = bhcodeData as string;
+
+        // Step 4: Create user profile
+        const { error: userError } = await supabase.from('users').insert({
+          id: authUserId,
+          email: formData.email,
+          full_name: formData.manager_name,
+          phone_number: formData.phone_number,
+          role: 'business_hub',
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        });
+
+        if (userError) throw userError;
+
+        // Step 5: Create business hub with location data
+        const hubInsert: BusinessHubInsert = {
+          user_id: authUserId,
+          bhcode,
+          name: formData.name,
+          municipality: formData.municipality,
+          province: formData.province,
+          manager_name: formData.manager_name,
+          territory_name: formData.territory_name,
+          commission_rate: commissionRates.businessHub,
+          location: formData.location || {},
+          territory_boundaries: formData.territory_boundaries || null,
+          admin_notes: formData.admin_notes,
+          created_at: new Date().toISOString(),
+        };
+
+        const { data: hubData, error: hubError } = await supabase
+          .from('business_hubs')
+          .insert(hubInsert)
+          .select()
+          .single();
+
+        if (hubError) throw hubError;
+
+        // Step 6: Create initial load if specified
+        if (formData.initial_load_amount && formData.initial_load_amount > 0) {
+          const { error: topupError } = await supabase.from('top_ups').insert({
+            user_id: authUserId,
+            amount: formData.initial_load_amount,
+            total_amount: formData.initial_load_amount,
+            status: 'completed',
+            payment_method: 'admin_load',
+            is_initial_load: true,
+            processed_at: new Date().toISOString(),
+          });
+
+          if (topupError) {
+            console.warn('Failed to create initial load:', topupError);
+          }
+
+          // Update user balance
+          await supabase
+            .from('users')
+            .update({ current_balance: formData.initial_load_amount })
+            .eq('id', authUserId);
+        }
+
+        return hubData;
+
+      } catch (dbError) {
+        // Cleanup auth user on database failure
+        try {
+          await adminSupabase.auth.admin.deleteUser(authUserId);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup auth user:', cleanupError);
+        }
+        throw dbError;
+      }
+
+    } catch (error) {
+      console.error('Business hub creation with location failed:', error);
+      throw error;
+    }
+  },
+
+  // Get business hubs with location filtering
+  async getBusinessHubsWithLocationFilter(filters?: {
+    validationStatus?: string;
+    accuracyThreshold?: number;
+    hasPlusCode?: boolean;
+    withinRadius?: { lat: number; lng: number; radiusKm: number };
+  }) {
+    const hubs = await this.getAllBusinessHubs();
+
+    if (!filters) return hubs;
+
+    return hubs.filter(hub => {
+      const location = hub.location as LocationData | null;
+
+      if (!location) return !filters.validationStatus; // Include hubs without location if no status filter
+
+      // Validation status filter
+      if (filters.validationStatus && location.validation_status !== filters.validationStatus) {
+        return false;
+      }
+
+      // Accuracy threshold filter
+      if (filters.accuracyThreshold &&
+          (!location.accuracy_meters || location.accuracy_meters > filters.accuracyThreshold)) {
+        return false;
+      }
+
+      // Plus code filter
+      if (filters.hasPlusCode !== undefined) {
+        const hasPlusCode = !!location.plus_code && locationUtils.validatePlusCode(location.plus_code);
+        if (filters.hasPlusCode !== hasPlusCode) return false;
+      }
+
+      // Radius filter
+      if (filters.withinRadius) {
+        const distance = locationUtils.calculateDistance(
+          filters.withinRadius.lat,
+          filters.withinRadius.lng,
+          location.coordinates.lat,
+          location.coordinates.lng
+        );
+        if (distance > filters.withinRadius.radiusKm) return false;
+      }
+
+      return true;
+    });
+  },
+
+  // Location utilities for admin interface
+  locationUtils,
+
   async createBusinessHubWithAuthAndLoad(params: {
     name: string;
     municipality: string;
@@ -451,6 +747,8 @@ export const businessHubService = {
     initial_load_amount: number;
     email: string;
     password: string;
+    location?: LocationData;
+    territory_boundaries?: TerritoryBounds;
   }) {
     const supabase = createClient()
     const adminSupabase = createAdminClient()

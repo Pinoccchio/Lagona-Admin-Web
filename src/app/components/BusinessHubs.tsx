@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { businessHubService } from '@/services/businessHubService';
 import { loadingStationService } from '@/services/loadingStationService';
 import { systemConfigService } from '@/services/systemConfigService';
 import AuditHistory from './AuditHistory';
-import MapModal from './MapModal';
+import MapVisualization from './MapVisualization';
 import LocationDetailsModal from './LocationDetailsModal';
+import { extractLegacyLocationData } from '@/utils/location';
 import type { Database } from '@/lib/supabase/types';
 
 type BusinessHub = Database['public']['Tables']['business_hubs']['Row'] & {
@@ -18,6 +19,10 @@ type BusinessHub = Database['public']['Tables']['business_hubs']['Row'] & {
     full_name: string | null;
     status: string | null;
   } | null;
+  // Legacy fields for backward compatibility
+  region?: string | null;
+  hierarchical_address?: string | null;
+  coordinates?: { lat: number; lng: number } | null;
 };
 
 type FormData = {
@@ -45,7 +50,7 @@ export default function BusinessHubs() {
   const [auditEntityName, setAuditEntityName] = useState<string | null>(null);
 
   // Location modal states
-  const [showMapModal, setShowMapModal] = useState(false);
+  const [showMapVisualization, setShowMapVisualization] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedHubForLocation, setSelectedHubForLocation] = useState<BusinessHub | null>(null);
   
@@ -87,6 +92,11 @@ export default function BusinessHubs() {
   
   // System config for dynamic bonus rates
   const [businessHubBonusRate, setBusinessHubBonusRate] = useState<number>(50); // Default fallback
+
+  // Enhanced filtering states
+  const [locationValidationFilter, setLocationValidationFilter] = useState<string>('all');
+  const [locationAccuracyFilter, setLocationAccuracyFilter] = useState<string>('all');
+  const [plusCodeFilter, setPlusCodeFilter] = useState<string>('all');
 
   // Status change templates
   const statusTemplates = {
@@ -167,7 +177,7 @@ export default function BusinessHubs() {
     }
   };
 
-  const fetchBusinessHubs = async () => {
+  const fetchBusinessHubs = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -203,13 +213,18 @@ export default function BusinessHubs() {
       
       console.log('[BusinessHubs] Final hubs with stations:', hubsWithStations.length);
       setBusinessHubs(hubsWithStations);
+
+      // Clean up selectedHubForLocation if the hub no longer exists
+      if (selectedHubForLocation && !hubsWithStations.find(h => h.id === selectedHubForLocation.id)) {
+        setSelectedHubForLocation(null);
+      }
     } catch (err) {
       console.error('[BusinessHubs] Error fetching business hubs:', err);
       setError(err instanceof Error ? err.message : 'Failed to load business hubs');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedHubForLocation]);
 
   const fetchStatistics = async () => {
     try {
@@ -220,7 +235,33 @@ export default function BusinessHubs() {
     }
   };
 
-  const displayHubs = businessHubs;
+  // Enhanced filtering logic
+  const displayHubs = businessHubs.filter(hub => {
+    // Extract location data using utility functions
+    const locationInfo = extractLegacyLocationData(hub);
+
+    // Location validation filter
+    if (locationValidationFilter !== 'all') {
+      if (locationValidationFilter === 'none' && locationInfo.location_validation_status) return false;
+      if (locationValidationFilter !== 'none' && locationInfo.location_validation_status !== locationValidationFilter) return false;
+    }
+
+    // Location accuracy filter
+    if (locationAccuracyFilter !== 'all') {
+      if (locationAccuracyFilter === 'high' && (!locationInfo.location_accuracy_meters || locationInfo.location_accuracy_meters > 10)) return false;
+      if (locationAccuracyFilter === 'medium' && (!locationInfo.location_accuracy_meters || locationInfo.location_accuracy_meters <= 10 || locationInfo.location_accuracy_meters > 50)) return false;
+      if (locationAccuracyFilter === 'low' && (!locationInfo.location_accuracy_meters || locationInfo.location_accuracy_meters <= 50)) return false;
+      if (locationAccuracyFilter === 'none' && locationInfo.location_accuracy_meters) return false;
+    }
+
+    // Plus code filter
+    if (plusCodeFilter !== 'all') {
+      if (plusCodeFilter === 'has' && !locationInfo.plus_code) return false;
+      if (plusCodeFilter === 'missing' && locationInfo.plus_code) return false;
+    }
+
+    return true;
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -904,7 +945,74 @@ export default function BusinessHubs() {
       {/* Business Hubs Table */}
       <div className="bg-pure-white rounded-xl lagona-shadow overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-deep-black">Business Hubs Directory</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-deep-black">Business Hubs Directory</h2>
+
+            {/* Enhanced Location Filters */}
+            <div className="flex gap-3">
+              {/* Location Validation Filter */}
+              <select
+                value={locationValidationFilter}
+                onChange={(e) => setLocationValidationFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All Validation Status</option>
+                <option value="valid">✓ Valid</option>
+                <option value="pending">⏳ Pending</option>
+                <option value="needs_review">⚠ Needs Review</option>
+                <option value="invalid">✗ Invalid</option>
+                <option value="none">No Status</option>
+              </select>
+
+              {/* Location Accuracy Filter */}
+              <select
+                value={locationAccuracyFilter}
+                onChange={(e) => setLocationAccuracyFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All Accuracy Levels</option>
+                <option value="high">⭐ High Accuracy ({'≤'}10m)</option>
+                <option value="medium">🟡 Medium Accuracy (11-50m)</option>
+                <option value="low">🔴 Low Accuracy ({'>'}50m)</option>
+                <option value="none">No Accuracy Data</option>
+              </select>
+
+              {/* Plus Code Filter */}
+              <select
+                value={plusCodeFilter}
+                onChange={(e) => setPlusCodeFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All Plus Code Status</option>
+                <option value="has">📍 Has Plus Code</option>
+                <option value="missing">📍 Missing Plus Code</option>
+              </select>
+
+              {/* Clear Filters Button */}
+              {(locationValidationFilter !== 'all' || locationAccuracyFilter !== 'all' || plusCodeFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setLocationValidationFilter('all');
+                    setLocationAccuracyFilter('all');
+                    setPlusCodeFilter('all');
+                  }}
+                  className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200 transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Summary */}
+          {(locationValidationFilter !== 'all' || locationAccuracyFilter !== 'all' || plusCodeFilter !== 'all') && (
+            <div className="mt-3 text-sm text-gray-600">
+              Showing {displayHubs.length} of {businessHubs.length} business hubs
+              {locationValidationFilter !== 'all' && ` • Validation: ${locationValidationFilter}`}
+              {locationAccuracyFilter !== 'all' && ` • Accuracy: ${locationAccuracyFilter}`}
+              {plusCodeFilter !== 'all' && ` • Plus Code: ${plusCodeFilter}`}
+            </div>
+          )}
         </div>
         <div className="relative business-hubs-table">
           <div className="min-w-full">
@@ -993,12 +1101,28 @@ export default function BusinessHubs() {
                           {hub.hierarchical_address}
                         </div>
                       )}
+
+                      {/* Plus Code */}
+                      {(() => {
+                        const hubLocationInfo = extractLegacyLocationData(hub);
+                        return hubLocationInfo.plus_code ? (
+                          <a
+                            href={`https://plus.codes/${hubLocationInfo.plus_code.split(' ')[0]}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-orange-600 font-mono bg-orange-50 px-2 py-1 rounded mt-1 inline-block hover:bg-orange-100 hover:text-orange-700 transition-colors"
+                          >
+                            <span className="font-medium">Plus:</span> {hubLocationInfo.plus_code}
+                          </a>
+                        ) : null;
+                      })()}
+
                       <div className="flex gap-1 mt-2">
                         {(hub.coordinates || hub.territory_boundaries) && (
                           <button
                             onClick={() => {
                               setSelectedHubForLocation(hub);
-                              setShowMapModal(true);
+                              setShowMapVisualization(true);
                             }}
                             className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 transition-colors"
                           >
@@ -2370,12 +2494,13 @@ export default function BusinessHubs() {
       )}
 
       {/* Location Modals */}
-      <MapModal
+      <MapVisualization
         businessHub={selectedHubForLocation}
-        isOpen={showMapModal}
+        mode="single"
+        isOpen={showMapVisualization}
         onClose={() => {
-          setShowMapModal(false);
-          setSelectedHubForLocation(null);
+          setShowMapVisualization(false);
+          // Keep selectedHubForLocation intact for reopening
         }}
       />
 
@@ -2384,7 +2509,7 @@ export default function BusinessHubs() {
         isOpen={showLocationModal}
         onClose={() => {
           setShowLocationModal(false);
-          setSelectedHubForLocation(null);
+          // Keep selectedHubForLocation intact for reopening
         }}
       />
     </div>
